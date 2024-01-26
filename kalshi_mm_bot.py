@@ -1,13 +1,8 @@
-import numpy as np
 import pymysql
 from agent_state import State, Strategy
-import pandas as pd
-from scipy.stats import norm
-import yfinance as yf
 from datetime import datetime  
 from datetime import date
 from datetime import timedelta
-import requests
 import json
 import  time
 import logging
@@ -61,10 +56,10 @@ def run(data_date, ticker):
             
             agent_state.set_imbalance_indicators()
             strat.run_naive_strat(datetime.strptime(processed_ts, '%Y-%m-%dT%H:%M:%S.%fZ'))    
-    print(agent_state.PnL*-1)    
+    #print(agent_state.PnL*-1)    
     print(agent_state.calc_final_PnL())
-    print(agent_state.yes_contracts_bought - agent_state.no_contracts_bought)
+    #print(agent_state.yes_contracts_bought - agent_state.no_contracts_bought)
 if __name__ == '__main__':
-    run_date = '2024-01-17'
-    market = 'NASDAQ100D-24JAN17-B16750'
+    run_date = '2024-01-19'
+    market = 'NASDAQ100D-24JAN19-B17350'
     run(run_date, market)

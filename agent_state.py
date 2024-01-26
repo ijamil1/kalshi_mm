@@ -1,8 +1,5 @@
 from datetime import timedelta, datetime
-from types import NoneType
 import numpy as np
-
-
 class State:
     #if market making a single ticker, this is the state
     def __init__(self) -> None:
@@ -510,29 +507,48 @@ class Strategy:
             #either long [16, 35] contracts or short [16, 35] contracts
             if inv > 0:
                 #long [16, 35] contracts so we want to avoid our bids being hit
-                for p_lvl, p_lvl_orders in self.agent_state.resting_bids.items(): #kill all resting  bids
+                for p_lvl, order in self.agent_state.resting_bids.items(): #kill all resting  bids
                     if p_lvl < self.agent_state.best_bid - 3:
                         continue #cancel only resting bids within the following price lvl: [best bid - 3, best bid]
-                    for p_lvl_order in p_lvl_orders:
+                    else:
                         self.last_action = ts + timedelta(milliseconds= 200)
-                        self.agent_state.actions.append(Cancel(ts, 200, p_lvl_order[2], 'buy', p_lvl))
+                        self.agent_state.actions.append(Cancel(ts, 200, 'buy', p_lvl))
+                if self.agent_state.best_bid - 4 not in self.agent_state.resting_bids:
+                    self.agent_state.actions.append(Order(ts, 200, 'limit', 'buy', self.agent_state.best_bid - 4, 1))
                 
-                for p_lvl, p_lvl_orders in self.agent_state.resting_asks.items(): #kill all resting asks
-                    for p_lvl_order in p_lvl_orders:
+                for p_lvl, order in self.agent_state.resting_asks.items(): #kill all resting asks exceept that at the best ask
+                    if p_lvl != self.agent_state.best_ask:
                         self.last_action = ts + timedelta(milliseconds = 200)
-                        self.agent_state.actions.append(Cancel(ts, 200, p_lvl_order[2], 'sell', p_lvl))
+                        self.agent_state.actions.append(Cancel(ts, 200, 'sell', p_lvl))
+                if self.agent_state.best_ask not in self.agent_state.resting_asks:
+                    self.agent_state.actions.append(Order(ts, 200, 'limit', 'sell', self.agent_state.best_ask, 1))
+            else:
+                #short [16, 35] contracts; in other words, you have surplus no contracts so we want to push our ask higher
+                for p_lvl, order in self.agent_state.resting_asks.items(): #kill all resting  bids
+                    if p_lvl > self.agent_state.best_ask + 3:
+                        continue #cancel only resting asks within the following price lvl: [best ask, 3 + best ask]
+                    else:
+                        self.last_action = ts + timedelta(milliseconds= 200)
+                        self.agent_state.actions.append(Cancel(ts, 200, 'sell', p_lvl))
+                if self.agent_state.best_ask + 4 not in self.agent_state.resting_asks:
+                    self.agent_state.actions.append(Order(ts, 200, 'limit', 'sell', self.agent_state.best_ask + 4, 1))
+                
+                for p_lvl, order in self.agent_state.resting_bids.items(): #kill all resting bids exceept that at the best bid
+                    if p_lvl != self.agent_state.best_bid:
+                        self.last_action = ts + timedelta(milliseconds = 200)
+                        self.agent_state.actions.append(Cancel(ts, 200, 'buy', p_lvl))
+                if self.agent_state.best_bid not in self.agent_state.resting_bids:
+                    self.agent_state.actions.append(Order(ts, 200, 'limit', 'buy', self.agent_state.best_bid, 1))   
         else:
             #long > 36 contracts or short > 36 contracts
             
-            for p_lvl, p_lvl_orders in self.agent_state.resting_bids.items(): #kill all resting  bids
-                for p_lvl_order in p_lvl_orders:
-                    self.last_action = ts + timedelta(milliseconds= 200)
-                    self.agent_state.actions.append(Cancel(ts, 200, p_lvl_order[2], 'buy', p_lvl))
+            for p_lvl, _ in self.agent_state.resting_bids.items(): #kill all resting  bid
+                self.last_action = ts + timedelta(milliseconds= 200)
+                self.agent_state.actions.append(Cancel(ts, 200, 'buy', p_lvl))
         
-            for p_lvl, p_lvl_orders in self.agent_state.resting_asks.items(): #kill all resting asks
-                    for p_lvl_order in p_lvl_orders:
-                        self.last_action = ts + timedelta(milliseconds = 200)
-                        self.agent_state.actions.append(Cancel(ts, 200, p_lvl_order[2], 'sell', p_lvl))
+            for p_lvl, _ in self.agent_state.resting_asks.items(): #kill all resting asks
+                self.last_action = ts + timedelta(milliseconds = 200)
+                self.agent_state.actions.append(Cancel(ts, 200, 'sell', p_lvl))
 
             if inv > 0:
                 #long > 36 contracts, can occur when price is falling and bid is repeatedly hit
@@ -543,7 +559,7 @@ class Strategy:
                 #short > 36 contracts
                 #market buy inv - 10 contracts
                 self.last_action = ts + timedelta(milliseconds= 200)
-                self.agent_state.actions.append(Order(ts, 200, 'market', 'sell', -1, inv - 10))
+                self.agent_state.actions.append(Order(ts, 200, 'market', 'sell', -1, -inv - 10))
             
     
         
