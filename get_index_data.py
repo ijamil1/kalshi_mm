@@ -3,7 +3,7 @@ import pymysql
 import yfinance as yf
 from datetime import date, timedelta
 import numpy as np
-import pandas as pd
+
 
 def get_mysql_credentials():
         with open("mysql_config.json", "r") as jsonfile:
@@ -29,7 +29,7 @@ def insert_ndx_return(last_dt, cursor_ = None):
         ndx_daily['Close'] = ndx_daily.apply(func = lambda x: round(x['Close'], 2), axis=1)
         ndx_return = (np.array(ndx_daily['Open'].iloc[1:]) - np.array(ndx_daily['Open'].iloc[:-1]))/np.array(ndx_daily['Open'].iloc[:-1])
         ndx_daily = ndx_daily.iloc[:-1]
-        ndx_daily['return'] = pd.Series(data=ndx_return)
+        ndx_daily['return'] = ndx_return
 
         ndx_tups = []
 
@@ -47,7 +47,7 @@ def insert_spx_return(last_dt, cursor_ = None):
         spx_daily['Close'] = spx_daily.apply(func = lambda x: round(x['Close'], 2), axis=1)
         spx_return = (np.array(spx_daily['Open'].iloc[1:]) - np.array(spx_daily['Open'].iloc[:-1]))/np.array(spx_daily['Open'].iloc[:-1])
         spx_daily = spx_daily.iloc[:-1]
-        spx_daily['return'] = pd.Series(data=spx_return)
+        spx_daily['return'] = spx_return
 
         spx_tups = []
 
@@ -57,7 +57,7 @@ def insert_spx_return(last_dt, cursor_ = None):
         cursor_.executemany('INSERT INTO spx VALUES (%s, %s, %s, %s)', spx_tups)
 
 
-def handler(event, context):
+if __name__ == '__main__':
     cursor = get_cursor()
     
     cursor.execute('select max(Date) from spx;')
