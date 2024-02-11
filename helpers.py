@@ -3,6 +3,21 @@ import pymysql
 import json
 import bisect
 
+month_to_abbr = {
+    1: 'JAN',
+    2: 'FEB',
+    3: 'MAR',
+    4: 'APR',
+    5: 'MAY',
+    6: 'JUN',
+    7: 'JUL',
+    8: 'AUG',
+    9: 'SEP',
+    10: 'OCT',
+    11: 'NOV',
+    12: 'DEC'
+}
+
 def get_mysql_credentials():
         with open("mysql_config.json", "r") as jsonfile:
             data = json.load(jsonfile)
@@ -132,4 +147,90 @@ def update_asks(asks, price, delta):
             asks.insert(bisect_left_ip, [price, delta])
     
             
-    
+def get_above_below_event_tickers(today):
+    month = month_to_abbr[today.month]
+    year = str(today.year - 2000)
+    day = str(today.day) if today.day >= 10 else '0'+str(today.day)
+
+    return 'INXU-' + year + month + day, 'NASDAQ100U-' + year + month + day
+
+def get_range_event_tickers(today):
+    month = month_to_abbr[today.month]
+    year = str(today.year - 2000)
+    day = str(today.day) if today.day >= 10 else '0'+str(today.day)
+
+    return 'INX-' + year + month + day, 'NASDAQ100-' + year + month + day
+
+def map_value_to_ab_ticker(ab_tickers):
+    d = {}
+    for ticker in ab_tickers:
+        value = round(float(ticker[ticker.index('-T')+2:]))
+        d[value] = ticker
+    return d
+
+def check_partition(l):
+  logging.info('entering check_partition function')
+  new = []
+  for s in l:
+    split = s.split(' ')
+    if 'or' in s and 'below' in s:
+      new.append([-np.inf, float(split[0].replace(',',''))])
+    elif 'or' in s and 'above' in s:
+      new.append([float(split[0].replace(',','')), np.inf])
+    elif 'to' in s:
+      new.append([float(split[0].replace(',','')), float(split[2].replace(',',''))])
+    else:
+      logging.info('unexpected format of market subtitle')
+      return False
+  new.sort(key = lambda x: x[0])
+  prev_inc_ub = 0
+  for i in range(len(new)):
+    if i == 0:
+      if new[i][0] != -1 * np.inf:
+        logging.info('markets don\'t form a partition')
+        return False
+      prev_inc_ub = new[i][1]
+    elif i == len(new)-1:
+      if new[i][1] != np.inf:
+        logging.info('markets don\'t form a partition')
+        return False
+      if np.ceil(prev_inc_ub) != new[i][0]:
+        logging.info('markets don\'t form a partition')
+        return False
+    else:
+      if np.ceil(prev_inc_ub) != new[i][0]:
+        logging.info('markets don\'t form a partition')
+        return False
+      prev_inc_ub = new[i][1]
+  logging.info('leaving check_partition function')
+  return True
+
+
+def map_range_ticker_to_ab_tickers(range_ticker_subtitles, ab_ticker_map):
+    d = {}
+    for tup in range_ticker_subtitles:
+        ticker = tup[0]
+        subtitle = tup[1]
+        if 'below' in subtitle or 'above' in subtitle:
+            continue
+        split = subtitle.split(' to ')
+        lb = round(float(split[0].replace(',','')))
+        ub = round(float(split[1].replace(',', '')))
+        if lb not in ab_ticker_map or ub not in ab_ticker_map:
+            continue
+        d[ticker] = [ab_ticker_map[lb], ab_ticker_map[ub]]
+    rev_d = {}
+    for range_ticker, ab_ticker_list in d.items():
+        long_ticker = ab_ticker_list[0]
+        short_ticker = ab_ticker_list[1]
+        if long_ticker in rev_d:
+            if range_ticker not in d[long_ticker]:
+                rev_d[long_ticker].append(range_ticker)
+        else:
+            rev_d[long_ticker] = [range_ticker]
+        if short_ticker in rev_d:
+            if range_ticker not in d[short_ticker]:
+                rev_d[short_ticker].append(range_ticker)
+        else:
+            rev_d[short_ticker] = [range_ticker]
+    return d, rev_d
