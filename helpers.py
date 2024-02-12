@@ -207,6 +207,10 @@ def check_partition(l):
 
 
 def map_range_ticker_to_ab_tickers(range_ticker_subtitles, ab_ticker_map):
+    '''
+    range_ticker_subtitles: list of 2-tup where first element is Kalshi ticker, second element is the ticker's subtitle
+    ab_ticker_map: dict that maps lower bound to corresponding above/below ticker 
+    '''
     d = {}
     for tup in range_ticker_subtitles:
         ticker = tup[0]
@@ -218,18 +222,22 @@ def map_range_ticker_to_ab_tickers(range_ticker_subtitles, ab_ticker_map):
         ub = round(float(split[1].replace(',', '')))
         if lb not in ab_ticker_map or ub not in ab_ticker_map:
             continue
-        d[ticker] = [ab_ticker_map[lb], ab_ticker_map[ub]]
-    rev_d = {}
+        d[ticker] = [ab_ticker_map[lb], ab_ticker_map[ub]] #maps range ticker to the 2 above/below tickers that would be needed to replicate the payoff this range ticker
+    rev_d = {} #will map above/below ticker to any range ticker in which the current above/below ticker can be combined  with another above/below
+                #ticker to replicate the range ticker's payoff
     for range_ticker, ab_ticker_list in d.items():
         long_ticker = ab_ticker_list[0]
-        short_ticker = ab_ticker_list[1]
+        short_ticker = ab_ticker_list[1] 
+        #longing long_ticker and shorting short_ticker would replicate payoff of current range_ticker
+        
         if long_ticker in rev_d:
-            if range_ticker not in d[long_ticker]:
+            if range_ticker not in rev_d[long_ticker]:
                 rev_d[long_ticker].append(range_ticker)
         else:
             rev_d[long_ticker] = [range_ticker]
+        
         if short_ticker in rev_d:
-            if range_ticker not in d[short_ticker]:
+            if range_ticker not in rev_d[short_ticker]:
                 rev_d[short_ticker].append(range_ticker)
         else:
             rev_d[short_ticker] = [range_ticker]

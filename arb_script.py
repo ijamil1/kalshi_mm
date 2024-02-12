@@ -14,6 +14,7 @@
 '''
 
 
+from audioop import reverse
 from pytz import timezone
 from KalshiClientsBaseV2 import KalshiClient, HttpError, ExchangeClient
 import requests
@@ -247,14 +248,8 @@ def check_sell_arb(ticker_list):
 def handle_orderbook_snapshot(ticker, response):
   cur_market_ticker = ticker
   resp = response
-  ob[cur_market_ticker]['bids'].clear()
-  ob[cur_market_ticker]['asks'].clear()
-  best_bid_sizes[cur_market_ticker] = 0
-  best_ask_sizes[cur_market_ticker] = 0
-  prev_bb = best_bids[cur_market_ticker]
-  prev_ba = best_asks[cur_market_ticker]
-  best_bids[cur_market_ticker] = 0
-  best_asks[cur_market_ticker] = 1
+  reset()
+
   yes_bids = None
   no_bids = None
   if 'yes' in resp['msg']:
@@ -265,26 +260,21 @@ def handle_orderbook_snapshot(ticker, response):
   # current bid and current size to the current ticker's orderbook. If offer is lower than current lowest offer, update current lowest offer and current lowest offer's size. Regardless of it's lower
   #or higher than current lowest offer, add current offer and size to the current ticker's orderbook
   if yes_bids is not None:
-    for ar in yes_bids:
-      cur_bid = ar[0]/100
-      cur_bid_sz = ar[1]
-      if cur_bid_sz:
-        if cur_bid > best_bids[cur_market_ticker]:
-          best_bids[cur_market_ticker] = cur_bid
-          best_bid_sizes[cur_market_ticker] = cur_bid_sz
-        ob[cur_market_ticker]['bids'][cur_bid] = cur_bid_sz
+    for bid_qty in yes_bids:
+      bid = round(bid_qty[0]/100, 2)
+      bids[cur_market_ticker][bid] = bid_qty[1]
+    
+    bb = max(bids[cur_market_ticker].keys())
+    bb_dict[cur_market_ticker] = bb
+  
   if no_bids is not None:
-    for ar in no_bids:
-      cur_ask = (100-ar[0])/100
-      cur_ask_sz = ar[1]
-      if cur_ask_sz:
-        if cur_ask < best_asks[cur_market_ticker]:
-          best_asks[cur_market_ticker] = cur_ask
-          best_ask_sizes[cur_market_ticker] = cur_ask_sz
-        ob[cur_market_ticker]['asks'][cur_ask] = cur_ask_sz
-  bid_price_delta = best_bids[cur_market_ticker] - prev_bb
-  ask_price_delta = best_asks[cur_market_ticker] - prev_ba
-  #check for arb
+    for bid_qty in no_bids:
+      ask = round((100-bid_qty[0])/100,2)
+      asks[cur_market_ticker][ask] = bid_qty[1]
+
+    ba = min(asks[cur_market_ticker].keys())
+    ba_dict[cur_market_ticker] = ba
+  '''#check for arb
   if 'NASDAQ' in cur_market_ticker:
     #nasdaq
     event_ask_sum['nasdaq']+=ask_price_delta
@@ -309,26 +299,37 @@ def handle_orderbook_snapshot(ticker, response):
       check_sell_arb(sp_market_tickers)
       print('here')
       bankroll = exchange_client.get_balance()['balance']
+      '''
 
 def handle_yes_orderbook_delta(ticker, response):
     cur_market_ticker = ticker
     resp = response
-    price = resp['msg']['price']/100
+    price = round(resp['msg']['price']/100, 2)
     delta = resp['msg']['delta']
     if delta == 0:
       return
-    if price > best_bids[cur_market_ticker]:
+    
+    if price not in bids[cur_market_ticker]:
+      #bid is not in existing order book
+      assert delta > 0
+      bids[cur_market_ticker][price] = delta
+      if price > bb_dict[cur_market_ticker]:
+        bb_dict[cur_market_ticker] = price
+    else:
+      #bid is in existing order book
+      bids[cur_market_ticker][price] += delta
+      if bids[cur_market_ticker][price] <= 0:
+        del bids[cur_market_ticker][price]
+        if price == bb_dict[cur_market_ticker]:
+          bb_dict[cur_market_ticker] = max(bids[cur_market_ticker].keys()) if len(bids[cur_market_ticker]) else 0
+
+    ''' if price > best_bids[cur_market_ticker][0]:
       #new highest bid
       if delta < 0:
         logging.error('tried to create new best bid with a negative delta')
         raise Exception
-      if price in ob[cur_market_ticker]['bids'].keys():
-        logging.error('new best bid is already present in orderbook')
-        raise Exception
-      cur_best_bid = best_bids[cur_market_ticker]
-      price_delta = price - cur_best_bid
-      ob[cur_market_ticker]['bids'][price] = delta
-      best_bids[cur_market_ticker] = price
+
+      best_bids[cur_market_ticker] = [price, delta]
       best_bid_sizes[cur_market_ticker] = delta
       #check arb
       if 'NASDAQ' in cur_market_ticker:
@@ -388,7 +389,7 @@ def handle_yes_orderbook_delta(ticker, response):
         if delta < 0:
           logging.error('new bid that wasn\'t in the orderbook has a negative delta')
           raise Exception
-        ob[cur_market_ticker]['bids'][price] = delta
+        ob[cur_market_ticker]['bids'][price] = delta'''
 
 def handle_no_orderbook_delta(ticker, response):
     #side is no
@@ -398,7 +399,22 @@ def handle_no_orderbook_delta(ticker, response):
     delta = resp['msg']['delta']
     if delta == 0:
       return
-    if price < best_asks[cur_market_ticker]:
+    
+    if price not in asks[cur_market_ticker]:
+      #ask is not in existing order book
+      assert delta > 0
+      asks[cur_market_ticker][price] = delta
+      if price < ba_dict[cur_market_ticker]:
+        ba_dict[cur_market_ticker] = price
+    else:
+      #ask is in existing order book
+      asks[cur_market_ticker][price] += delta
+      if asks[cur_market_ticker][price] <= 0:
+        del asks[cur_market_ticker][price]
+        if price == ba_dict[cur_market_ticker]:
+          ba_dict[cur_market_ticker] = min(asks[cur_market_ticker].keys()) if len(asks[cur_market_ticker]) else 1  
+
+    '''if price < best_asks[cur_market_ticker]:
       if delta < 0:
         logging.error('new best ask has a negative delta')
         raise Exception
@@ -461,24 +477,21 @@ def handle_no_orderbook_delta(ticker, response):
       else: #price was not in OB
           if delta < 0:
             logging.error('new ask has a negative delta')
-          ob[cur_market_ticker]['asks'][price] = delta
+          ob[cur_market_ticker]['asks'][price] = delta'''
 
 def reset():
-  ob.clear()
-  best_bids.clear()
-  best_asks.clear()
-  best_bid_sizes.clear()
-  best_ask_sizes.clear()
-  event_bid_sum['nasdaq'] = 0
-  event_ask_sum['nasdaq'] = len(nasdaq_market_tickers)
-  event_bid_sum['sp500'] = 0
-  event_ask_sum['sp500'] = len(sp_market_tickers)
-  for ticker in markets:
-    ob[ticker] = {'bids': {}, 'asks': {}}
-    best_bids[ticker] = 0
-    best_asks[ticker] = 1
-    best_bid_sizes[ticker] = 0
-    best_ask_sizes[ticker] = 0
+  '''
+  clears bids and asks dicts and resets bb and ba for each ticker to 0, 1 respectively with 0 volume for each
+  '''
+  bids.clear()
+  asks.clear()
+  bb_dict.clear()
+  ba_dict.clear()
+  for ticker in markets:    
+    bids[ticker] = {0: 0}
+    asks[ticker] = {1: 0}
+    bb_dict[ticker] = 0
+    ba_dict[ticker] = 1
 
 async def get_data(market_tickers):
   command_id = 1
@@ -497,8 +510,8 @@ async def get_data(market_tickers):
           #break if we've lost or wagered half our starting bankroll for the day
           breakout = True
           break
-        if datetime.now(tz=eastern).hour < 7 or (datetime.now(tz=eastern).hour == 16 and datetime.now(tz=eastern).minute >= 30) or datetime.now(tz=eastern).hour > 16:
-          #break if before 7 am ET or later than 4:30 ET
+        if datetime.now(tz=eastern).hour < 9 or (datetime.now(tz=eastern).hour == 16 and datetime.now(tz=eastern).minute >= 30) or datetime.now(tz=eastern).hour > 16:
+          #break if before 9 am ET or later than 4:30 ET
           breakout = True
           break
         msg = await ws.recv()
@@ -522,11 +535,11 @@ async def get_data(market_tickers):
             handle_no_orderbook_delta(cur_market_ticker, resp)
         elif resp['type'] == 'market_lifecycle':
           cur_market_ticker = resp['msg']['market_ticker']
-          if 'NASDAQ' in cur_market_ticker and cur_market_ticker not in nasdaq_market_tickers:
+          if 'NASDAQ' in cur_market_ticker and cur_market_ticker not in ndx_ab_markets and cur_market_ticker not in ndx_range_markets:
             logging.error('new NASDAQ market added that is not accounted for')
             breakout = True
             break
-          elif 'INXD' in cur_market_ticker and  cur_market_ticker not in sp_market_tickers:
+          elif 'INXD' in cur_market_ticker and cur_market_ticker not in spx_ab_markets and cur_market_ticker not in spx_range_markets:
             logging.error('new SP500 market added that not accounted for')
             breakout = True      
             break   
@@ -557,10 +570,10 @@ order_params = {'ticker':None,
                      'sell_position_floor':0,
                      'buy_max_cost':None}
 
-best_bids = {} #ticker: [price, qty]
-best_asks = {}
-
-
+bids = {} #ticker: {price: qty}
+asks = {} #ticker: {price: qty}
+bb_dict = {} #ticker: best bid price
+ba_dict = {} #ticker: best ask price
 
 sp_negative_delta_ask_dt = datetime.fromtimestamp(0)
 sp_negative_delta_ask_amt = 0
@@ -586,9 +599,9 @@ try:
   spx_range_event = exchange_client.get_event(spx_range_ticker)
 
   ndx_ab_markets = [x['ticker'] for x in ndx_ab_event['markets']]
-  ndx_val_ab_ticker_map = map_value_to_ab_ticker(ndx_ab_markets)
+  ndx_val_ab_ticker_map = map_value_to_ab_ticker(ndx_ab_markets) #maps lower bound to corresponding above/beloww ticker for NASDAQ100
   spx_ab_markets = [x['ticker'] for x in spx_ab_event['markets']]
-  spx_val_ab_ticker_map = map_value_to_ab_ticker(spx_ab_markets)
+  spx_val_ab_ticker_map = map_value_to_ab_ticker(spx_ab_markets) ##maps lower bound to corresponding above/below ticker for SP500
   
   ndx_range_markets = [x['ticker'] for x in ndx_range_event['markets']]
   spx_range_markets = [x['ticker'] for x in spx_range_event['markets']]
@@ -598,15 +611,8 @@ try:
 
   ndx_range_ticker_to_ab_tickers, ndx_ab_ticker_to_range_tickers = map_range_ticker_to_ab_tickers(ndx_range_subtitles, ndx_val_ab_ticker_map)
   spx_range_ticker_to_ab_tickers, spx_ab_ticker_to_range_tickers = map_range_ticker_to_ab_tickers(spx_range_subtitles, spx_val_ab_ticker_map)
-
- 
-  for x in ndx_range_markets + ndx_ab_markets:
-    best_bids[x] = [0,0]
-    best_asks[x] = [1, 0]
-
-  for x in spx_range_markets + spx_ab_markets:
-    best_bids[x] = [0, 0]
-    best_asks[x] = [1, 0]
+  #{}_range_ticker_to_ab_tickers maps a range ticker to the 2 above/below tickers that can be used to replicate the payoff of the range ticker
+  #{}_ab_ticker_to_range_tickers maps an above/below ticker to range tickers it can be used to replicate the payoff of
 
   markets = ndx_range_markets + ndx_ab_markets + spx_range_markets + spx_ab_markets
 
