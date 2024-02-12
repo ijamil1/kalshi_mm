@@ -31,11 +31,6 @@ import websockets
 import numpy as np
 from helpers import *
 
-def get_kalshi_creds():
-  with open("kalshi_creds.json", "r") as jsonfile:
-    data = json.load(jsonfile)
-    return (data['email'], data['password'])
-
 def process_buy_order(order_response):
   order_id = order_response['order']['order_id']
   ticker = order_response['order']['ticker']
@@ -244,6 +239,69 @@ def check_sell_arb(ticker_list):
         order_params['count'] = filled
         if filled == 0:
           break
+
+def check_range_arbs(ndx_tickers, spx_tickers):
+  '''
+  ndx_tickers: list of NASDAQ100 range tickers that form a partition of the event
+  spx_tickers: list of SP500 range tickers that form a partition of the event 
+  '''
+  bid_sum = get_event_bid_sum(ndx_tickers, bb_dict)
+  if bid_sum > 1.025:
+    #NDX sell arb possible 
+    min_vol = get_event_bid_vol(ndx_tickers, bb_dict, bids)
+    pass
+
+  bid_sum = get_event_bid_sum(spx_tickers, bb_dict)
+  if bid_sum > 1.025:
+    #SPX sell arb possible
+    min_vol = get_event_bid_vol(spx_tickers, bb_dict, bids)
+    pass
+
+  ask_sum = get_event_ask_sum(ndx_tickers, ba_dict)
+  if ask_sum < 0.975:
+    #NDX buy arb possible
+    min_vol = get_event_ask_vol(ndx_tickers, ba_dict, asks)
+    pass
+
+  ask_sum = get_event_ask_sum(spx_tickers, ba_dict)
+  if ask_sum < 0.975:
+    #spx buy arb possible
+    min_vol = get_event_ask_vol(spx_tickers, ba_dict, asks)
+    pass
+  
+def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
+  for ticker in ndx_range_tickers:
+    '''cross event arb for NASDAQ100 events'''
+    if ticker not in ndx_range_ticker_to_ab_tickers:
+      continue
+    ab_tickers = ndx_range_ticker_to_ab_tickers[ticker]
+    lb_ticker = ab_tickers[0]
+    ub_ticker = ab_tickers[1]
+    if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker]:
+      # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
+      #need to figure out min volume across the 2 shorts and 1 long
+      min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
+    elif ba_dict[ticker] < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
+      #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
+      #need to figure out min volume across the 1 short and 2 longs
+      min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
+  
+  for ticker in spx_range_tickers:
+    '''cross event arb for SP500 events'''
+    if ticker not in spx_range_ticker_to_ab_tickers:
+      continue
+    ab_tickers = spx_range_ticker_to_ab_tickers[ticker]
+    lb_ticker = ab_tickers[0]
+    ub_ticker = ab_tickers[1]
+    if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker]:
+      # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
+      #need to figure out min volume across the 2 shorts and 1 long
+      min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
+    elif ba_dict[ticker] < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
+      #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
+      #need to figure out min volume across the 1 short and 2 longs
+      min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
+
 
 def handle_orderbook_snapshot(ticker, response):
   cur_market_ticker = ticker
@@ -589,7 +647,6 @@ bankroll = 0
 kalshi_creds = get_kalshi_creds()
 exchange_client = ExchangeClient(exchange_api_base="https://trading-api.kalshi.com/trade-api/v2", email = kalshi_creds[0], password = kalshi_creds[1])
 starting_bankroll = exchange_client.get_balance()['balance'] #in cent
-max_amt_bankroll_allocated = 0.1 * starting_bankroll #in cents
 token = exchange_client.token
 logging.basicConfig(filename='logging_arb_script.txt', encoding='utf-8', level=logging.DEBUG, format="%(levelname)s | %(asctime)s | %(message)s", datefmt="%Y-%m-%dT%H:%M:%SZ",)
 try:
@@ -601,7 +658,7 @@ try:
   ndx_ab_markets = [x['ticker'] for x in ndx_ab_event['markets']]
   ndx_val_ab_ticker_map = map_value_to_ab_ticker(ndx_ab_markets) #maps lower bound to corresponding above/beloww ticker for NASDAQ100
   spx_ab_markets = [x['ticker'] for x in spx_ab_event['markets']]
-  spx_val_ab_ticker_map = map_value_to_ab_ticker(spx_ab_markets) ##maps lower bound to corresponding above/below ticker for SP500
+  spx_val_ab_ticker_map = map_value_to_ab_ticker(spx_ab_markets) #maps lower bound to corresponding above/below ticker for SP500
   
   ndx_range_markets = [x['ticker'] for x in ndx_range_event['markets']]
   spx_range_markets = [x['ticker'] for x in spx_range_event['markets']]
@@ -615,6 +672,7 @@ try:
   #{}_ab_ticker_to_range_tickers maps an above/below ticker to range tickers it can be used to replicate the payoff of
 
   markets = ndx_range_markets + ndx_ab_markets + spx_range_markets + spx_ab_markets
+
 
 except Exception as e:
   logging.error("an exception was thrown in the try block of the script that finds the markets for the events", exc_info=True)

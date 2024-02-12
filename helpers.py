@@ -22,6 +22,11 @@ def get_mysql_credentials():
         with open("mysql_config.json", "r") as jsonfile:
             data = json.load(jsonfile)
         return (data['host'], data['user'], data['password'], data['database'])
+
+def get_kalshi_creds():
+  with open("kalshi_creds.json", "r") as jsonfile:
+    data = json.load(jsonfile)
+    return (data['email'], data['password'])
     
 def get_cursor():
     creds = get_mysql_credentials()
@@ -242,3 +247,41 @@ def map_range_ticker_to_ab_tickers(range_ticker_subtitles, ab_ticker_map):
         else:
             rev_d[short_ticker] = [range_ticker]
     return d, rev_d
+
+def get_event_bid_sum(tickers, best_bids):
+    '''
+    tickers: list of Kalshi tickers that form a partition of an event (ie: complete coverage of the outcome space)
+    best_bids: dict mapping ticker to best bid for that ticker
+    '''
+    sum = 0
+    for t in tickers:
+        sum += best_bids[t]
+    return sum
+
+def get_event_ask_sum(tickers, best_asks):
+    '''
+    tickers: list of Kalshi tickers that form a partition of an event (ie: complete coverage of the outcome space)
+    best_asks: dict mapping ticker to best ask for that ticker
+    '''
+    sum = 0
+    for t in tickers:
+        sum += best_asks[t]
+    return sum
+
+def get_event_bid_vol(tickers, best_bids, bid_dict):
+    min_vol = np.inf
+    for t in tickers:
+        bb  = best_bids[t]
+        vol = bid_dict[t][bb]
+        if vol < min_vol:
+            min_vol = vol
+    return min_vol
+
+def get_event_ask_vol(tickers, best_asks, ask_dict):
+    min_vol = np.inf
+    for t in tickers:
+        ba = best_asks[t]
+        vol = ask_dict[t][ba]
+        if vol < min_vol:
+            min_vol = vol
+    return min_vol 
