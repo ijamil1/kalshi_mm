@@ -102,40 +102,19 @@ def compute_event_bid_ask_sums(event):
     event_bid_sum['nasdaq'] = bid_sum
     event_ask_sum['nasdaq'] = ask_sum
         
-def check_buy_arb(ticker_list):
-  nas = False
-  sp = False
-  offer_sum = 0
-  if 'NASDAQ' in ticker_list[0]:
-    nas = True
-    sp = False
-    offer_sum = event_ask_sum['nasdaq']
-  elif 'INXD' in ticker_list[0]:
-    sp = True
-    nas = False
-    offer_sum = event_ask_sum['sp500']
-
-  min_offer_size = np.inf
-  ticker_price_dict = {}
-  ticker_filled_dict = {}
-  ticker_size_tup_list = []
-
-  for k in ticker_list:
-    ticker_price_dict[k] = best_asks[k]
-    min_offer_size = min([best_ask_sizes[k],min_offer_size])
-    ticker_size_tup_list.append((k,best_ask_sizes[k]))
-
-  if min_offer_size == 0:
-    return
-  min_offer_size*=position_cap
-  if nas:
-    if (nasdaq_negative_delta_ask_amt >= 0.5*order_params['count'] and (datetime
-        .now()-nasdaq_negative_delta_ask_dt).seconds <= 60) or ((datetime.now()-nasdaq_negative_delta_ask_dt).seconds<= 10):
-      return
-  elif sp:
-    if (sp_negative_delta_ask_amt >= 0.5*order_params['count'] and (datetime.now()-sp_negative_delta_ask_dt).seconds <= 60) or ((datetime.now()-sp_negative_delta_ask_dt).seconds <= 10):
-      return
-  order_params['side'] = 'yes'
+def buy_arb(ticker_list, vol):
+  order_params = {'ticker': None,
+                     'client_order_id': None,
+                     'type':'limit',
+                     'action':'buy',
+                     'side': 'yes',
+                     'count': None,
+                     'yes_price': None,
+                     'no_price': None,
+                     'expiration_ts': 1,
+                     'sell_position_floor': 0,
+                     'buy_max_cost': None}
+  
   if (min_offer_size * offer_sum * 100) <= max_amt_bankroll_allocated:
     order_params['count'] = min_offer_size
   else:
@@ -269,6 +248,75 @@ def check_range_arbs(ndx_tickers, spx_tickers):
     min_vol = get_event_ask_vol(spx_tickers, ba_dict, asks)
     pass
   
+def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol, short_range = True):
+  '''
+  short_range = True => short range ticker, long lb ticker, short ub ticker 
+  short_range = False => long range ticker, short lb ticker, long ub ticker
+  '''
+  long_order_params = {'ticker': None,
+                     'client_order_id': None,
+                     'type':'limit',
+                     'action':'buy',
+                     'side': 'yes',
+                     'count': vol,
+                     'yes_price': None,
+                     'no_price': None,
+                     'expiration_ts': 1,
+                     'sell_position_floor': 0,
+                     'buy_max_cost': None}
+  
+  short_order_params = {'ticker': None,
+                     'client_order_id': None,
+                     'type':'limit',
+                     'action':'sell',
+                     'side': 'yes',
+                     'count': vol,
+                     'yes_price': None,
+                     'no_price': None,
+                     'expiration_ts': 1,
+                     'sell_position_floor': 0,
+                     'buy_max_cost': None}
+  
+  if short_range:
+    short_order_params['ticker'] = range_ticker
+    short_order_params['client_order_id'] = str(uuid.uuid4())
+    short_order_params['yes_price'] = bb_dict[range_ticker] * 100
+
+    #place short order on range ticker
+
+    long_order_params['ticker'] = lb_ticker
+    long_order_params['client_order_id'] = str(uuid.uuid4())
+    long_order_params['yes_price'] = ba_dict[lb_ticker] * 100
+
+    #place long order on lb ticker
+
+    short_order_params = ub_ticker
+    short_order_params['client_order_id'] = str(uuid.uuid4())
+    short_order_params['yes_price'] = bb_dict[ub_ticker] * 100
+
+    #place short order on ub ticker
+
+  else:
+    short_order_params['ticker'] = lb_ticker
+    short_order_params['client_order_id'] = str(uuid.uuid4())
+    short_order_params['yes_price'] = bb_dict[lb_ticker] * 100
+
+    #place short order on lb ticker
+
+    long_order_params['ticker'] = ub_ticker
+    long_order_params['client_order_id'] = str(uuid.uuid4())
+    long_order_params['yes_price'] = ba_dict[ub_ticker] * 100
+
+    #place long order on ub ticker
+
+    long_order_params['ticker'] = range_ticker
+    long_order_params['client_order_id'] = str(uuid.uuid4())
+    long_order_params['yes_price'] = ba_dict[range_ticker] * 100
+
+    #place long order on range ticker
+
+
+
 def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
   for ticker in ndx_range_tickers:
     '''cross event arb for NASDAQ100 events'''
@@ -281,11 +329,12 @@ def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
       # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
       #need to figure out min volume across the 2 shorts and 1 long
       min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
+      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, min_vol)
     elif ba_dict[ticker] < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
       #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
       #need to figure out min volume across the 1 short and 2 longs
       min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
-  
+      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, min_vol, False)
   for ticker in spx_range_tickers:
     '''cross event arb for SP500 events'''
     if ticker not in spx_range_ticker_to_ab_tickers:
@@ -297,11 +346,12 @@ def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
       # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
       #need to figure out min volume across the 2 shorts and 1 long
       min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
+      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, min_vol)
     elif ba_dict[ticker] < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
       #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
       #need to figure out min volume across the 1 short and 2 longs
       min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
-
+      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, min_vol, False)
 
 def handle_orderbook_snapshot(ticker, response):
   cur_market_ticker = ticker
@@ -616,17 +666,6 @@ spx_range_ticker, ndx_range_ticker = get_range_event_tickers(today)
 spx_ab_ticker, ndx_ab_ticker = get_above_below_event_tickers(today)
 
 eastern = timezone('US/Eastern')
-order_params = {'ticker':None,
-                     'client_order_id':None,
-                     'type':'limit',
-                     'action':'buy',
-                     'side': None,
-                     'count':None,
-                     'yes_price':None,
-                     'no_price':None,
-                     'expiration_ts':1,
-                     'sell_position_floor':0,
-                     'buy_max_cost':None}
 
 bids = {} #ticker: {price: qty}
 asks = {} #ticker: {price: qty}
