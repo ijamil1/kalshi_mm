@@ -2,6 +2,7 @@ import numpy as np
 import pymysql
 import json
 import bisect
+import uuid
 
 month_to_abbr = {
     1: 'JAN',
@@ -295,25 +296,72 @@ def get_taker_fill(api_client, order_resp):
     '''
     order_id = order_resp['order']['order_id']
     ord = api_client.get_order(order_id)
-    return order_id, ord['order']['taker_fill_count']
+    return ord['order']['taker_fill_count']
 
 
-def process_cross_event_arb_orders(api_client, short_range_ind = True, long_range = None, short_range = None, long_lb = None, short_lb = None, long_ub = None, short_ub = None):
+def submit_market_order(api_client, ticker, side, vol):
+    params =    {'ticker': ticker,
+                'client_order_id': str(uuid.uuid4()),
+                'type':'market',
+                'action':'buy',
+                'side': side,
+                'count': vol,
+                'yes_price': None,
+                'no_price': None,
+                'expiration_ts': 1,
+                'sell_position_floor': None,
+                'buy_max_cost': None}
+    
+    api_client.create_order(**params)
+    return
+
+def submit_limit_buy(api_client, ticker, side, vol, yes_price):
+    params =    {'ticker': ticker,
+                'client_order_id': str(uuid.uuid4()),
+                'type':'limit',
+                'action':'buy',
+                'side': side,
+                'count': vol,
+                'yes_price': yes_price,
+                'no_price': None,
+                'expiration_ts': 1,
+                'sell_position_floor': None,
+                'buy_max_cost': None}
+
+    resp = api_client.create_order(**params)
+    return resp
+
+def process_cross_event_arb_orders(api_client, x, x_vol, y, y_vol, z, z_vol, short_range_ind = True):
     '''
-    if  short_range_ind => shorting [lb, ub) range ticker, longing >= lb above/below ticker, shorting >= ub above/below ticker
-    else => longing [lb, ub) range, shorting >= lb above/below ticker, longing >= ub above/below ticker
+    if  short_range_ind => shorted x, longing y, shorted z
+    else => long x, short y, long z 
 
-    long_range: order id for longing [lb, ub) range ticker
-    short_range: order id for shorting [lb, ub) range ticker
-
-    long_lb: order id for longing >= lb above/below ticker
-    short_lb: order id for shorting >= lb above/below ticker
-
-    long_ub: order id for longing >= ub above/below ticker
-    short_ub: order id for shorting >= ub above/below ticker
+    x, y, z: tickers
+    x_vol, y_vol, z_vol: respective order volumes
     '''
+    min_vol = min([x_vol, y_vol, z_vol])
+    if x_vol != min_vol:
+        diff = x_vol - min_vol
+        if short_range_ind:
+            #shorted x => bought No at the ask so now must buy yes at the ask
+            submit_market_order(api_client, x, 'yes', diff)
+        else:
+            #longed x => bought yes at the ask so now must sell at the bid => buy No at the ask
+            submit_market_order(api_client, x, 'no', diff)
+    if y_vol != min_vol:
+        diff = y_vol - min_vol
+        if short_range_ind:
+            #long y => bought Yes at the ask so now must sell at the bid => buy No at the ask
+            submit_market_order(api_client, y, 'no', diff)
+        else:
+            #short y => bought No at the ask so now must buy yes at the ask 
+            submit_market_order(api_client, x, 'yes', diff)
+    if z_vol != min_vol:
+        diff = z_vol - min_vol
+        if short_range_ind:
+            #short z => bought No at the ask so now must buy yes at the ask
+            submit_market_order(api_client, z, 'yes', diff)
+        else:
+            #long z => bought yes at the ask so now must sell at the bid => buy No at the ask
+            submit_market_order(api_client, z, 'no', diff)
 
-    if short_range_ind:
-        pass
-    else:
-        pass

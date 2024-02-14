@@ -12,9 +12,6 @@
   ie: max fees of .01$/contract
    consider fees and optimize speed and pattern of logging calls and other logic
 '''
-
-
-from audioop import reverse
 from pytz import timezone
 from KalshiClientsBaseV2 import KalshiClient, HttpError, ExchangeClient
 import requests
@@ -254,88 +251,42 @@ def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol_, short_rang
   short_range = False => long range ticker, short lb ticker, long ub ticker
   '''
   vol = vol_
-  short_range_ord_id = None
-  long_lb_ord_id = None
-  short_ub_ord_id = None
-  short_lb_ord_id = None
-  long_ub_ord_id = None
-  long_range_ord_id
-  long_order_params = {'ticker': None,
-                     'client_order_id': None,
-                     'type':'limit',
-                     'action':'buy',
-                     'side': 'yes',
-                     'count': vol,
-                     'yes_price': None,
-                     'no_price': None,
-                     'expiration_ts': 1,
-                     'sell_position_floor': None,
-                     'buy_max_cost': None}
-  
-  short_order_params = {'ticker': None,
-                     'client_order_id': None,
-                     'type':'limit',
-                     'action':'sell',
-                     'side': 'yes',
-                     'count': vol,
-                     'yes_price': None,
-                     'no_price': None,
-                     'expiration_ts': 1,
-                     'sell_position_floor': None,
-                     'buy_max_cost': None}
+  short_range_vol = 0
+  long_lb_vol = 0
+  short_ub_vol = 0
+  short_lb_vol = 0
+  long_ub_vol = 0
+  long_range_vol = 0
   
   if short_range:
-    short_order_params['ticker'] = range_ticker
-    short_order_params['client_order_id'] = str(uuid.uuid4())
-    short_order_params['yes_price'] = bb_dict[range_ticker] * 100
+    order_resp = submit_limit_buy(exchange_client, range_ticker, 'no', vol, 100 - (bb_dict[range_ticker] * 100)) #place short order on range ticker
+    short_range_vol = get_taker_fill(exchange_client, order_resp)
 
-    order_resp = exchange_client.create_order(**short_order_params) #place short order on range ticker
-    short_range_ord_id, vol = get_taker_fill(exchange_client, order_resp)
+    if short_range_vol:
+      order_resp = submit_limit_buy(exchange_client, lb_ticker, 'yes', short_range_vol, ba_dict[lb_ticker] * 100) #place long order on lb ticker
+      long_lb_vol = get_taker_fill(exchange_client, order_resp)
 
-    long_order_params['count'] = vol
-    long_order_params['ticker'] = lb_ticker
-    long_order_params['client_order_id'] = str(uuid.uuid4())
-    long_order_params['yes_price'] = ba_dict[lb_ticker] * 100
+    if long_lb_vol:
+      order_resp = submit_limit_buy(exchange_client, ub_ticker, 'no', long_lb_vol, 100 - (bb_dict[ub_ticker] * 100))  #place short order on ub ticker
+      short_ub_vol = get_taker_fill(exchange_client, order_resp)
+    
+    process_cross_event_arb_orders(exchange_client, range_ticker, short_range_vol, lb_ticker, long_lb_vol, ub_ticker, short_ub_vol)
 
-    if vol:
-      order_resp = exchange_client.create_order(**long_order_params) #place long order on lb ticker
-      long_lb_ord_id, vol = get_taker_fill(exchange_client, order_resp)
-
-    short_order_params['count'] = vol
-    short_order_params = ub_ticker
-    short_order_params['client_order_id'] = str(uuid.uuid4())
-    short_order_params['yes_price'] = bb_dict[ub_ticker] * 100
-
-    if vol:
-      order_resp = exchange_client.create_order(**short_order_params)  #place short order on ub ticker
-      short_ub_ord_id, vol = get_taker_fill(exchange_client, order_resp)
 
   else:
-    short_order_params['ticker'] = lb_ticker
-    short_order_params['client_order_id'] = str(uuid.uuid4())
-    short_order_params['yes_price'] = bb_dict[lb_ticker] * 100
+    
+    order_resp = submit_limit_buy(exchange_client, lb_ticker, 'no', vol, 100 - (bb_dict[lb_ticker] * 100)) #place short order on lb ticker
+    short_lb_vol = get_taker_fill(exchange_client, order_resp)
 
-    order_resp = exchange_client.create_order(**short_order_params)  #place short order on lb ticker
-    short_lb_ord_id, vol = get_taker_fill(exchange_client, order_resp)
+    if short_lb_vol:
+      order_resp = submit_limit_buy(exchange_client, ub_ticker, 'yes', short_lb_vol, ba_dict[ub_ticker] * 100) #place long order on ub ticker
+      long_ub_vol = get_taker_fill(exchange_client, order_resp)
 
-    long_order_params['count'] = vol
-    long_order_params['ticker'] = ub_ticker
-    long_order_params['client_order_id'] = str(uuid.uuid4())
-    long_order_params['yes_price'] = ba_dict[ub_ticker] * 100
+    if long_ub_vol:
+      order_resp = submit_limit_buy(exchange_client, range_ticker, 'yes', long_ub_vol, ba_dict[range_ticker] * 100) #place long order on range ticker
+      long_range_vol = get_taker_fill(exchange_client, order_resp)
 
-    if vol:
-      order_resp = exchange_client.create_order(**long_order_params) #place long order on ub ticker
-      long_ub_ord_id, vol = get_taker_fill(exchange_client, order_resp)
-
-    long_order_params['count'] = vol
-    long_order_params['ticker'] = range_ticker
-    long_order_params['client_order_id'] = str(uuid.uuid4())
-    long_order_params['yes_price'] = ba_dict[range_ticker] * 100
-
-    if vol:
-      order_resp = exchange_client.create_order(**long_order_params) #place long order on range ticker
-      long_range_ord_id, vol = get_taker_fill(exchange_client, order_resp)
-
+    process_cross_event_arb_orders(exchange_client, range_ticker, long_range_vol, lb_ticker, short_lb_vol, ub_ticker, long_ub_vol, False)
 
 def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
   for ticker in ndx_range_tickers:
@@ -402,32 +353,7 @@ def handle_orderbook_snapshot(ticker, response):
 
     ba = min(asks[cur_market_ticker].keys())
     ba_dict[cur_market_ticker] = ba
-  '''#check for arb
-  if 'NASDAQ' in cur_market_ticker:
-    #nasdaq
-    event_ask_sum['nasdaq']+=ask_price_delta
-    event_bid_sum['nasdaq']+=bid_price_delta
-    if event_ask_sum['nasdaq'] < 1 - len(nasdaq_market_tickers):
-      check_buy_arb(nasdaq_market_tickers)
-      print('here')
-      bankroll = exchange_client.get_balance()['balance']
-    elif event_bid_sum['nasdaq'] > 1 + len(nasdaq_market_tickers):
-      check_sell_arb(nasdaq_market_tickers)
-      print('here')
-      bankroll = exchange_client.get_balance()['balance']
-  elif 'INXD' in cur_market_ticker:
-    #sp500
-    event_ask_sum['sp500']+=ask_price_delta
-    event_bid_sum['sp500']+=bid_price_delta
-    if event_ask_sum['sp500'] < 1 - len(sp_market_tickers):
-      check_buy_arb(sp_market_tickers)
-      print('here')
-      bankroll = exchange_client.get_balance()['balance']
-    elif event_bid_sum['sp500'] > 1 + len(sp_market_tickers):
-      check_sell_arb(sp_market_tickers)
-      print('here')
-      bankroll = exchange_client.get_balance()['balance']
-      '''
+ 
 
 def handle_yes_orderbook_delta(ticker, response):
     cur_market_ticker = ticker
