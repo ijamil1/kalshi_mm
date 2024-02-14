@@ -285,3 +285,35 @@ def get_event_ask_vol(tickers, best_asks, ask_dict):
         if vol < min_vol:
             min_vol = vol
     return min_vol 
+
+def get_taker_fill(api_client, order_resp):
+    '''
+    api_client: Python object that serves as an interface to API
+    order_resp: json object returned by  Kalshi api client's create order call
+
+    return order_id for this order and the fill
+    '''
+    order_id = order_resp['order']['order_id']
+    ord = api_client.get_order(order_id)
+    return order_id, ord['order']['taker_fill_count']
+
+
+def process_cross_event_arb_orders(api_client, short_range_ind = True, long_range = None, short_range = None, long_lb = None, short_lb = None, long_ub = None, short_ub = None):
+    '''
+    if  short_range_ind => shorting [lb, ub) range ticker, longing >= lb above/below ticker, shorting >= ub above/below ticker
+    else => longing [lb, ub) range, shorting >= lb above/below ticker, longing >= ub above/below ticker
+
+    long_range: order id for longing [lb, ub) range ticker
+    short_range: order id for shorting [lb, ub) range ticker
+
+    long_lb: order id for longing >= lb above/below ticker
+    short_lb: order id for shorting >= lb above/below ticker
+
+    long_ub: order id for longing >= ub above/below ticker
+    short_ub: order id for shorting >= ub above/below ticker
+    '''
+
+    if short_range_ind:
+        pass
+    else:
+        pass

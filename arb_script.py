@@ -248,11 +248,18 @@ def check_range_arbs(ndx_tickers, spx_tickers):
     min_vol = get_event_ask_vol(spx_tickers, ba_dict, asks)
     pass
   
-def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol, short_range = True):
+def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol_, short_range = True):
   '''
   short_range = True => short range ticker, long lb ticker, short ub ticker 
   short_range = False => long range ticker, short lb ticker, long ub ticker
   '''
+  vol = vol_
+  short_range_ord_id = None
+  long_lb_ord_id = None
+  short_ub_ord_id = None
+  short_lb_ord_id = None
+  long_ub_ord_id = None
+  long_range_ord_id
   long_order_params = {'ticker': None,
                      'client_order_id': None,
                      'type':'limit',
@@ -262,7 +269,7 @@ def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol, short_range
                      'yes_price': None,
                      'no_price': None,
                      'expiration_ts': 1,
-                     'sell_position_floor': 0,
+                     'sell_position_floor': None,
                      'buy_max_cost': None}
   
   short_order_params = {'ticker': None,
@@ -274,7 +281,7 @@ def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol, short_range
                      'yes_price': None,
                      'no_price': None,
                      'expiration_ts': 1,
-                     'sell_position_floor': 0,
+                     'sell_position_floor': None,
                      'buy_max_cost': None}
   
   if short_range:
@@ -282,39 +289,52 @@ def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol, short_range
     short_order_params['client_order_id'] = str(uuid.uuid4())
     short_order_params['yes_price'] = bb_dict[range_ticker] * 100
 
-    #place short order on range ticker
+    order_resp = exchange_client.create_order(**short_order_params) #place short order on range ticker
+    short_range_ord_id, vol = get_taker_fill(exchange_client, order_resp)
 
+    long_order_params['count'] = vol
     long_order_params['ticker'] = lb_ticker
     long_order_params['client_order_id'] = str(uuid.uuid4())
     long_order_params['yes_price'] = ba_dict[lb_ticker] * 100
 
-    #place long order on lb ticker
+    if vol:
+      order_resp = exchange_client.create_order(**long_order_params) #place long order on lb ticker
+      long_lb_ord_id, vol = get_taker_fill(exchange_client, order_resp)
 
+    short_order_params['count'] = vol
     short_order_params = ub_ticker
     short_order_params['client_order_id'] = str(uuid.uuid4())
     short_order_params['yes_price'] = bb_dict[ub_ticker] * 100
 
-    #place short order on ub ticker
+    if vol:
+      order_resp = exchange_client.create_order(**short_order_params)  #place short order on ub ticker
+      short_ub_ord_id, vol = get_taker_fill(exchange_client, order_resp)
 
   else:
     short_order_params['ticker'] = lb_ticker
     short_order_params['client_order_id'] = str(uuid.uuid4())
     short_order_params['yes_price'] = bb_dict[lb_ticker] * 100
 
-    #place short order on lb ticker
+    order_resp = exchange_client.create_order(**short_order_params)  #place short order on lb ticker
+    short_lb_ord_id, vol = get_taker_fill(exchange_client, order_resp)
 
+    long_order_params['count'] = vol
     long_order_params['ticker'] = ub_ticker
     long_order_params['client_order_id'] = str(uuid.uuid4())
     long_order_params['yes_price'] = ba_dict[ub_ticker] * 100
 
-    #place long order on ub ticker
+    if vol:
+      order_resp = exchange_client.create_order(**long_order_params) #place long order on ub ticker
+      long_ub_ord_id, vol = get_taker_fill(exchange_client, order_resp)
 
+    long_order_params['count'] = vol
     long_order_params['ticker'] = range_ticker
     long_order_params['client_order_id'] = str(uuid.uuid4())
     long_order_params['yes_price'] = ba_dict[range_ticker] * 100
 
-    #place long order on range ticker
-
+    if vol:
+      order_resp = exchange_client.create_order(**long_order_params) #place long order on range ticker
+      long_range_ord_id, vol = get_taker_fill(exchange_client, order_resp)
 
 
 def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
