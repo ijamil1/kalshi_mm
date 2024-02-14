@@ -28,229 +28,15 @@ import websockets
 import numpy as np
 from helpers import *
 
-def process_buy_order(order_response):
-  order_id = order_response['order']['order_id']
-  ticker = order_response['order']['ticker']
-  cursor = None
-  count = 0
-  while True:
-    response = exchange_client.get_fills(ticker,order_id, cursor)
-    if 'fills' not in response:
-      break
-    fills = response['fills']
-    if len(fills)>0:
-      side = fills[0]['side']
-      buy_price = 0
-      if side == 'yes':
-        buy_price = fills[0]['yes_price']
-      else:
-        buy_price = fills[0]['no_price']
-      for fill in fills:
-        count+=fill['count']
-    cursor = response['cursor']
-    if cursor is None or cursor == '':
-      break
-  if count:
-    logging.info('Limit Buy: ticker: %s, side: %s, buy_price: %s, count: %s', ticker, side, str(buy_price/100), str(count))
-  return count
-
-def process_sell_order(order_response):
-  order_id = order_response['order']['order_id']
-  ticker = order_response['order']['ticker']
-  cursor = None
-  count = 0
-  price = 0
-  wt_sum = 0
-  while True:
-    response = exchange_client.get_fills(ticker,order_id, cursor)
-    if 'fills' not in response:
-      break
-    fills = response['fills']
-    if len(fills)>0:
-      side = fills[0]['side']
-      for fill in fills:
-        side = fill['side']
-        cur_count = fill['count']
-        if side == 'yes':
-          price = fill['yes_price']
-        else:
-          price = fill['no_price']
-        wt_sum += price * cur_count
-        count+=cur_count
-    cursor = response['cursor']
-    if cursor is None or cursor == '':
-       break
-  if count:
-    logging.info('Market Sell: ticker: %s, side: %s, avg_price: %s, count: %s', ticker, side, str(wt_sum/(100*count)), str(count))
-
-def compute_event_bid_ask_sums(event):
-  bid_sum = 0
-  ask_sum = 0
-  if event == 'sp500':
-    for ticker in sp_market_tickers:
-      bid_sum += best_bids[ticker]
-      ask_sum += best_asks[ticker]
-    event_bid_sum['sp500'] = bid_sum
-    event_ask_sum['sp500'] = ask_sum
-  elif event == 'nasdaq':
-    for ticker in nasdaq_market_tickers:
-      bid_sum += best_bids[ticker]
-      ask_sum += best_asks[ticker]
-    event_bid_sum['nasdaq'] = bid_sum
-    event_ask_sum['nasdaq'] = ask_sum
-        
-def buy_arb(ticker_list, vol):
-  order_params = {'ticker': None,
-                     'client_order_id': None,
-                     'type':'limit',
-                     'action':'buy',
-                     'side': 'yes',
-                     'count': None,
-                     'yes_price': None,
-                     'no_price': None,
-                     'expiration_ts': 1,
-                     'sell_position_floor': 0,
-                     'buy_max_cost': None}
-  
-  if (min_offer_size * offer_sum * 100) <= max_amt_bankroll_allocated:
-    order_params['count'] = min_offer_size
-  else:
-    order_params['count'] = int(np.floor(max_amt_bankroll_allocated/(100*offer_sum)))
-  ticker_size_tup_list.sort(key=lambda x: x[1])
-  for cur_ticker_tup in ticker_size_tup_list:
-    cur_ticker = cur_ticker_tup[0]
-    order_params['client_order_id']= str(uuid.uuid4())
-    order_params['ticker'] = cur_ticker
-    order_params['yes_price'] = ticker_price_dict[cur_ticker]*100
-    order_params['no_price'] = None
-    order_params['buy_max_cost'] = ticker_price_dict[cur_ticker]*100
-    filled = process_buy_order(exchange_client.create_order(**order_params))
-    ticker_filled_dict[cur_ticker] = filled
-    if filled != order_params['count']:
-      prev_tickers = ticker_list[:ticker_list.index(cur_ticker)]
-      for old_ticker in prev_tickers:
-        #market sell yes contracts
-        order_params['client_order_id']= str(uuid.uuid4())
-        order_params['action'] = 'sell'
-        order_params['type'] = 'market'
-        order_params['ticker'] = old_ticker
-        order_params['count'] = ticker_filled_dict[old_ticker] - filled
-        ticker_filled_dict[old_ticker] = filled
-        order_params['yes_price'] = None
-        order_params['no_price'] = None
-        order_params['buy_max_cost'] = None
-        process_sell_order(exchange_client.create_order(**order_params))
-      order_params['type'] = 'limit'
-      order_params['action'] = 'buy'
-      order_params['count'] = filled
-      if filled == 0:
-          break
-   
-def check_sell_arb(ticker_list):
-    sp = False
-    nas = False
-    bid_sum = 0
-    no_sum = 0
-    if 'NASDAQ' in ticker_list[0]:
-      nas = True
-      bid_sum = event_bid_sum['nasdaq']
-      no_sum = len(nasdaq_market_tickers) - bid_sum
-    elif 'INXD' in ticker_list[0]:
-      sp = True
-      bid_sum = event_bid_sum['sp500']
-      no_sum = len(sp_market_tickers) - bid_sum
-    
-    
-    #sum of buy no = sum 1-bid(ith market) = num markets - bid_sum
-    min_bid_size = np.inf
-    ticker_price_dict = {}
-    ticker_filled_dict = {}
-    ticker_size_tup_list = []
-    for k in ticker_list:
-      if best_bids[k] == 0:
-        continue
-      ticker_price_dict[k] = 1-best_bids[k]
-      min_bid_size = min([best_bid_sizes[k], min_bid_size])
-      ticker_size_tup_list.append((k, best_bid_sizes[k]))
-
-    if min_bid_size == 0:
-      return
-    min_bid_size*=position_cap
-    if nas:
-      if (nasdaq_negative_delta_bid_amt >= 0.5 * order_params['count'] and (datetime.now()-nasdaq_negative_delta_bid_dt).seconds <= 60) or ((datetime.now()-nasdaq_negative_delta_bid_dt).seconds <= 10):
-        return
-    elif sp:
-      if (sp_negative_delta_bid_amt >= 0.5 * order_params['count'] and (datetime.now()-nasdaq_negative_delta_bid_dt).seconds <= 60) or ((datetime.now()-sp_negative_delta_bid_dt).seconds <= 10):
-        return
-    order_params['side'] = 'no'
-    if min_bid_size * no_sum * 100 <= max_amt_bankroll_allocated:
-      order_params['count'] = min_bid_size
-    else:
-      order_params['count'] = int(np.floor(max_amt_bankroll_allocated/(100*no_sum)))
-    ticker_size_tup_list.sort(key=lambda x:x[1])
-    for cur_ticker_tup in ticker_size_tup_list:
-      cur_ticker = cur_ticker_tup[0]
-      order_params['ticker'] = cur_ticker
-      order_params['yes_price'] = None
-      order_params['no_price'] = ticker_price_dict[cur_ticker]*100
-      order_params['buy_max_cost'] = ticker_price_dict[cur_ticker]*100
-      filled = process_buy_order(exchange_client.create_order(**order_params))
-      ticker_filled_dict[cur_ticker] = filled
-      if filled != order_params['count']:
-        prev_tickers = ticker_list[:ticker_list.index(cur_ticker)]
-        for old_ticker in prev_tickers:
-          #market sell no contracts
-          order_params['client_order_id']= str(uuid.uuid4())
-          order_params['action'] = 'sell'
-          order_params['type'] = 'market'
-          order_params['ticker'] = old_ticker
-          order_params['count'] = ticker_filled_dict[old_ticker] - filled
-          ticker_filled_dict[old_ticker] = filled
-          order_params['yes_price'] = None
-          order_params['no_price'] = None
-          order_params['buy_max_cost'] = None
-          process_sell_order(exchange_client.create_order(**order_params))
-        order_params['type'] = 'limit'
-        order_params['action'] = 'buy'
-        order_params['count'] = filled
-        if filled == 0:
-          break
-
-def check_range_arbs(ndx_tickers, spx_tickers):
-  '''
-  ndx_tickers: list of NASDAQ100 range tickers that form a partition of the event
-  spx_tickers: list of SP500 range tickers that form a partition of the event 
-  '''
-  bid_sum = get_event_bid_sum(ndx_tickers, bb_dict)
-  if bid_sum > 1.025:
-    #NDX sell arb possible 
-    min_vol = get_event_bid_vol(ndx_tickers, bb_dict, bids)
-    pass
-
-  bid_sum = get_event_bid_sum(spx_tickers, bb_dict)
-  if bid_sum > 1.025:
-    #SPX sell arb possible
-    min_vol = get_event_bid_vol(spx_tickers, bb_dict, bids)
-    pass
-
-  ask_sum = get_event_ask_sum(ndx_tickers, ba_dict)
-  if ask_sum < 0.975:
-    #NDX buy arb possible
-    min_vol = get_event_ask_vol(ndx_tickers, ba_dict, asks)
-    pass
-
-  ask_sum = get_event_ask_sum(spx_tickers, ba_dict)
-  if ask_sum < 0.975:
-    #spx buy arb possible
-    min_vol = get_event_ask_vol(spx_tickers, ba_dict, asks)
-    pass
   
 def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol_, short_range = True):
   '''
   short_range = True => short range ticker, long lb ticker, short ub ticker 
   short_range = False => long range ticker, short lb ticker, long ub ticker
   '''
-  vol = vol_
+  vol = round(vol_*0.9)
+  if vol <= 0:
+    return
   short_range_vol = 0
   long_lb_vol = 0
   short_ub_vol = 0
@@ -259,33 +45,46 @@ def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol_, short_rang
   long_range_vol = 0
   
   if short_range:
-    order_resp = submit_limit_buy(exchange_client, range_ticker, 'no', vol, 100 - (bb_dict[range_ticker] * 100)) #place short order on range ticker
+    order_resp = submit_limit_buy(exchange_client, range_ticker, 'no', vol, bb_dict[range_ticker] * 100) #place short order on range ticker
     short_range_vol = get_taker_fill(exchange_client, order_resp)
+    bankroll -= short_range_vol * (100 - (bb_dict[range_ticker] * 100))
+    logging.info('Limit Buy: ticker: %s, side: %s, buy_price: %s, count: %s', range_ticker, 'no', str(100 - (bb_dict[range_ticker] * 100)), str(short_range_vol))
 
     if short_range_vol:
       order_resp = submit_limit_buy(exchange_client, lb_ticker, 'yes', short_range_vol, ba_dict[lb_ticker] * 100) #place long order on lb ticker
       long_lb_vol = get_taker_fill(exchange_client, order_resp)
+      bankroll -= long_lb_vol * (ba_dict[lb_ticker] * 100)
+      logging.info('Limit Buy: ticker: %s, side: %s, buy_price: %s, count: %s', lb_ticker, 'yes', str(ba_dict[lb_ticker] * 100), str(long_lb_vol))
 
     if long_lb_vol:
-      order_resp = submit_limit_buy(exchange_client, ub_ticker, 'no', long_lb_vol, 100 - (bb_dict[ub_ticker] * 100))  #place short order on ub ticker
+      order_resp = submit_limit_buy(exchange_client, ub_ticker, 'no', long_lb_vol, bb_dict[ub_ticker] * 100)  #place short order on ub ticker
       short_ub_vol = get_taker_fill(exchange_client, order_resp)
+      bankroll -= short_ub_vol * (100 - (bb_dict[ub_ticker] * 100))
+      logging.info('Limit Buy: ticker: %s, side: %s, buy_price: %s, count: %s', ub_ticker, 'no', str(100 - (bb_dict[ub_ticker] * 100)), str(short_ub_vol))
+
     
     process_cross_event_arb_orders(exchange_client, range_ticker, short_range_vol, lb_ticker, long_lb_vol, ub_ticker, short_ub_vol)
 
 
   else:
     
-    order_resp = submit_limit_buy(exchange_client, lb_ticker, 'no', vol, 100 - (bb_dict[lb_ticker] * 100)) #place short order on lb ticker
+    order_resp = submit_limit_buy(exchange_client, lb_ticker, 'no', vol, bb_dict[lb_ticker] * 100) #place short order on lb ticker
     short_lb_vol = get_taker_fill(exchange_client, order_resp)
+    bankroll -= short_lb_vol * (100 - (bb_dict[lb_ticker] * 100))
+    logging.info('Limit Buy: ticker: %s, side: %s, buy_price: %s, count: %s', lb_ticker, 'no', str(100 - (bb_dict[lb_ticker] * 100)), str(short_lb_vol))
 
     if short_lb_vol:
       order_resp = submit_limit_buy(exchange_client, ub_ticker, 'yes', short_lb_vol, ba_dict[ub_ticker] * 100) #place long order on ub ticker
       long_ub_vol = get_taker_fill(exchange_client, order_resp)
+      bankroll -= long_ub_vol * ba_dict[ub_ticker] * 100
+      logging.info('Limit Buy: ticker: %s, side: %s, buy_price: %s, count: %s', ub_ticker, 'yes', str(ba_dict[ub_ticker] * 100), str(long_ub_vol))
 
     if long_ub_vol:
       order_resp = submit_limit_buy(exchange_client, range_ticker, 'yes', long_ub_vol, ba_dict[range_ticker] * 100) #place long order on range ticker
       long_range_vol = get_taker_fill(exchange_client, order_resp)
-
+      bankroll -= long_range_vol * ba_dict[range_ticker] * 100
+      logging.info('Limit Buy: ticker: %s, side: %s, buy_price: %s, count: %s', range_ticker, 'yes', str(ba_dict[range_ticker] * 100), str(long_range_vol))
+      
     process_cross_event_arb_orders(exchange_client, range_ticker, long_range_vol, lb_ticker, short_lb_vol, ub_ticker, long_ub_vol, False)
 
 def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
@@ -300,12 +99,14 @@ def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
       # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
       #need to figure out min volume across the 2 shorts and 1 long
       min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
-      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, min_vol)
+      vol = adjust_order_volume(100 - bb_dict[ticker], ba_dict[lb_ticker], 100-bb_dict[ub_ticker], min_vol, bankroll, min_bankroll)
+      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol)
     elif ba_dict[ticker] < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
       #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
       #need to figure out min volume across the 1 short and 2 longs
       min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
-      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, min_vol, False)
+      vol = adjust_order_volume(ba_dict[ticker], 100 - bb_dict[lb_ticker], ba_dict[ub_ticker], min_vol, bankroll, min_bankroll)
+      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol, False)
   for ticker in spx_range_tickers:
     '''cross event arb for SP500 events'''
     if ticker not in spx_range_ticker_to_ab_tickers:
@@ -317,12 +118,14 @@ def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
       # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
       #need to figure out min volume across the 2 shorts and 1 long
       min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
-      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, min_vol)
+      vol = adjust_order_volume(100 - bb_dict[ticker], ba_dict[lb_ticker], 100-bb_dict[ub_ticker], min_vol, bankroll, min_bankroll)
+      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol)
     elif ba_dict[ticker] < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
       #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
       #need to figure out min volume across the 1 short and 2 longs
       min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
-      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, min_vol, False)
+      vol = adjust_order_volume(ba_dict[ticker], 100 - bb_dict[lb_ticker], ba_dict[ub_ticker], min_vol, bankroll, min_bankroll)
+      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol, False)
 
 def handle_orderbook_snapshot(ticker, response):
   cur_market_ticker = ticker
@@ -335,9 +138,7 @@ def handle_orderbook_snapshot(ticker, response):
     yes_bids = resp['msg']['yes']
   if 'no' in resp['msg']:
     no_bids = resp['msg']['no']
-  #loop thru both yes bids and offers. If bid is higher than current largest bid, update current largest bid and current largest bid's size. Regardless of it's higher than or lower than current largest bid, add
-  # current bid and current size to the current ticker's orderbook. If offer is lower than current lowest offer, update current lowest offer and current lowest offer's size. Regardless of it's lower
-  #or higher than current lowest offer, add current offer and size to the current ticker's orderbook
+
   if yes_bids is not None:
     for bid_qty in yes_bids:
       bid = round(bid_qty[0]/100, 2)
@@ -353,7 +154,6 @@ def handle_orderbook_snapshot(ticker, response):
 
     ba = min(asks[cur_market_ticker].keys())
     ba_dict[cur_market_ticker] = ba
- 
 
 def handle_yes_orderbook_delta(ticker, response):
     cur_market_ticker = ticker
@@ -376,74 +176,6 @@ def handle_yes_orderbook_delta(ticker, response):
         del bids[cur_market_ticker][price]
         if price == bb_dict[cur_market_ticker]:
           bb_dict[cur_market_ticker] = max(bids[cur_market_ticker].keys()) if len(bids[cur_market_ticker]) else 0
-
-    ''' if price > best_bids[cur_market_ticker][0]:
-      #new highest bid
-      if delta < 0:
-        logging.error('tried to create new best bid with a negative delta')
-        raise Exception
-
-      best_bids[cur_market_ticker] = [price, delta]
-      best_bid_sizes[cur_market_ticker] = delta
-      #check arb
-      if 'NASDAQ' in cur_market_ticker:
-        event_bid_sum['nasdaq'] += price_delta
-        if event_bid_sum['nasdaq'] > 1 + len(nasdaq_market_tickers):
-          check_sell_arb(nasdaq_market_tickers)
-          print('here')
-          bankroll = exchange_client.get_balance()['balance']
-      elif 'INXD' in cur_market_ticker:
-        event_bid_sum['sp500'] += price_delta
-        if event_bid_sum['sp500'] > 1 + len(sp_market_tickers):
-          check_sell_arb(sp_market_tickers)
-          print('here')
-          bankroll = exchange_client.get_balance()['balance']
-    elif price == best_bids[cur_market_ticker]:
-      #affects highest bid for this market
-      if delta < 0:
-        if abs(delta) > ob[cur_market_ticker]['bids'][price]:
-          logging.error('negative delta larger than availability at a price level')
-          raise Exception
-        if 'NASDAQ' in cur_market_ticker:
-          nasdaq_negative_delta_bid_amt = abs(delta)
-          nasdaq_negative_delta_bid_dt = datetime.now()
-        elif 'INXD' in cur_market_ticker:
-          sp_negative_delta_bid_amt = abs(delta)
-          sp_negative_delta_bid_dt = datetime.now()
-      ob[cur_market_ticker]['bids'][price] += delta
-      best_bid_sizes[cur_market_ticker] += delta
-      if ob[cur_market_ticker]['bids'][price] == 0:
-        cur_best_bid = price
-        del ob[cur_market_ticker]['bids'][price]
-        #recompute best bid
-        if len(ob[cur_market_ticker]['bids'].keys()):
-          best_bids[cur_market_ticker] = max(ob[cur_market_ticker]['bids'].keys())
-          best_bid_sizes[cur_market_ticker] = ob[cur_market_ticker]['bids'][best_bids[cur_market_ticker]]
-          price_delta = best_bids[cur_market_ticker] - price
-        else:
-          best_bids[cur_market_ticker] = 0
-          best_bid_sizes[cur_market_ticker] = 0
-          price_delta = -price
-        if 'NASDAQ' in cur_market_ticker:
-          event_bid_sum['nasdaq']+=price_delta
-        elif 'INXD' in cur_market_ticker:
-          event_bid_sum['sp500']+=price_delta
-    else: #doesnt affect highest bid for this market
-      if price in ob[cur_market_ticker]['bids']:
-        #bid price is already in OB so delta can be pos or neg
-        #if neg, then it's possible that best bid will change
-        if delta < 0 and abs(delta) > ob[cur_market_ticker]['bids'][price]:
-          logging.error('negative delta larger than availability at a price level')
-          raise Exception
-        ob[cur_market_ticker]['bids'][price] += delta
-        if ob[cur_market_ticker]['bids'][price] == 0:
-          #delta was negative and removes this price level
-          del ob[cur_market_ticker]['bids'][price]
-      else: #price was not in OB
-        if delta < 0:
-          logging.error('new bid that wasn\'t in the orderbook has a negative delta')
-          raise Exception
-        ob[cur_market_ticker]['bids'][price] = delta'''
 
 def handle_no_orderbook_delta(ticker, response):
     #side is no
@@ -468,71 +200,6 @@ def handle_no_orderbook_delta(ticker, response):
         if price == ba_dict[cur_market_ticker]:
           ba_dict[cur_market_ticker] = min(asks[cur_market_ticker].keys()) if len(asks[cur_market_ticker]) else 1  
 
-    '''if price < best_asks[cur_market_ticker]:
-      if delta < 0:
-        logging.error('new best ask has a negative delta')
-        raise Exception
-      ob[cur_market_ticker]['asks'][price] = delta
-      price_delta = price-best_asks[cur_market_ticker]
-      best_asks[cur_market_ticker] = price
-      best_ask_sizes[cur_market_ticker] = delta
-      if 'NASDAQ' in cur_market_ticker:
-        event_ask_sum['nasdaq']+=price_delta
-        if event_ask_sum['nasdaq'] < 1 - len(nasdaq_market_tickers):
-          check_buy_arb(nasdaq_market_tickers)
-          print('here')
-          bankroll = exchange_client.get_balance()['balance']
-      elif 'INXD' in cur_market_ticker:
-        event_ask_sum['sp500'] += price_delta
-        if event_ask_sum['sp500'] < 1 - len(sp_market_tickers):
-          check_buy_arb(sp_market_tickers)
-          print('here')
-          bankroll = exchange_client.get_balance()['balance']
-    elif price == best_asks[cur_market_ticker]:
-      #affects lowest ask for this market
-      if delta < 0:
-        if abs(delta) > ob[cur_market_ticker]['asks'][price]:
-          logging.error('negative delta larger than availability at a price level')
-          raise Exception
-        if 'NASDAQ' in cur_market_ticker:
-          nasdaq_negative_delta_ask_amt = abs(delta)
-          nasdaq_negative_delta_ask_dt = datetime.now()
-        elif 'INXD' in cur_market_ticker:
-          sp_negative_delta_ask_amt = abs(delta)
-          sp_negative_delta_ask_dt = datetime.now()
-      ob[cur_market_ticker]['asks'][price] += delta
-      best_ask_sizes[cur_market_ticker] += delta
-      if ob[cur_market_ticker]['asks'][price] == 0:
-        del ob[cur_market_ticker]['asks'][price]
-        #recompute best ask
-        if len(ob[cur_market_ticker]['asks'].keys()):
-          best_asks[cur_market_ticker] = min(ob[cur_market_ticker]['asks'].keys())
-          best_ask_sizes[cur_market_ticker] = ob[cur_market_ticker]['asks'][best_asks[cur_market_ticker]]
-          price_delta = best_asks[cur_market_ticker]-price
-        else:
-          best_asks[cur_market_ticker] = 1
-          best_ask_sizes[cur_market_ticker] = 0
-          price_delta = 1-price
-        if 'NASDAQ' in cur_market_ticker:
-          event_ask_sum['nasdaq']+=price_delta
-        elif 'INXD' in cur_market_ticker:
-          event_ask_sum['sp500']+=price_delta
-    else: #doesnt affect lowest ask for this market
-      if price in ob[cur_market_ticker]['asks']:
-        #ask price is already in OB so delta can be pos or neg
-        #if neg, then it's possible that best offer will change
-        if delta < 0 and abs(delta) > ob[cur_market_ticker]['asks'][price]:
-          logging.error('negative delta larger than availability at a price level')
-          raise Exception
-        ob[cur_market_ticker]['asks'][price] += delta
-        if ob[cur_market_ticker]['asks'][price] == 0:
-          #delta was negative and removes this price level
-          del ob[cur_market_ticker]['asks'][price]
-      else: #price was not in OB
-          if delta < 0:
-            logging.error('new ask has a negative delta')
-          ob[cur_market_ticker]['asks'][price] = delta'''
-
 def reset():
   '''
   clears bids and asks dicts and resets bb and ba for each ticker to 0, 1 respectively with 0 volume for each
@@ -553,14 +220,13 @@ async def get_data(market_tickers):
   async for ws in websockets.connect(uri='wss://trading-api.kalshi.com/trade-api/ws/v2', extra_headers={'Authorization': 'Bearer {}'.format(token)}):
     if breakout:
       break
-    bankroll = exchange_client.get_balance()['balance'] #current bankroll in cents
     reset()
     prev_seq_num = 0
     try:
       d = {"id": command_id,"cmd": "subscribe","params": {"channels": ["orderbook_delta", "market_lifecycle"], "market_tickers": market_tickers}}
       await ws.send(json.dumps(d))  #subscribe to channels after establishing new ws connection
       while True:
-        if bankroll <= 0.5 * starting_bankroll:
+        if bankroll <= min_bankroll:
           #break if we've lost or wagered half our starting bankroll for the day
           breakout = True
           break
@@ -613,27 +279,20 @@ spx_ab_ticker, ndx_ab_ticker = get_above_below_event_tickers(today)
 
 eastern = timezone('US/Eastern')
 
-bids = {} #ticker: {price: qty}
-asks = {} #ticker: {price: qty}
-bb_dict = {} #ticker: best bid price
-ba_dict = {} #ticker: best ask price
+bids = {} #ticker: {price in usd: qty}
+asks = {} #ticker: {price in usd: qty}
+bb_dict = {} #ticker: best bid price in usd
+ba_dict = {} #ticker: best ask price in usd
 
-sp_negative_delta_ask_dt = datetime.fromtimestamp(0)
-sp_negative_delta_ask_amt = 0
-nasdaq_negative_delta_ask_dt = datetime.fromtimestamp(0)
-nasdaq_negative_delta_ask_amt = 0
-sp_negative_delta_bid_dt = datetime.fromtimestamp(0)
-sp_negative_delta_bid_amt = 0
-nasdaq_negative_delta_bid_dt = datetime.fromtimestamp(0)
-nasdaq_negative_delta_bid_amt = 0
-buffer = 0.0
-position_cap = 0.8
-bankroll = 0
+
+
+
 kalshi_creds = get_kalshi_creds()
 exchange_client = ExchangeClient(exchange_api_base="https://trading-api.kalshi.com/trade-api/v2", email = kalshi_creds[0], password = kalshi_creds[1])
-starting_bankroll = exchange_client.get_balance()['balance'] #in cent
+min_bankroll = round(exchange_client.get_balance()['balance'] * 0.5) #in cents; starting bankroll is half of the balance in Kalshi account
+bankroll = exchange_client.get_balance()['balance']
 token = exchange_client.token
-logging.basicConfig(filename='logging_arb_script.txt', encoding='utf-8', level=logging.DEBUG, format="%(levelname)s | %(asctime)s | %(message)s", datefmt="%Y-%m-%dT%H:%M:%SZ",)
+logging.basicConfig(filename='cross_event_arb_log.txt', encoding='utf-8', level=logging.DEBUG, format="%(levelname)s | %(asctime)s | %(message)s", datefmt="%Y-%m-%dT%H:%M:%SZ",)
 try:
   ndx_ab_event = exchange_client.get_event(ndx_ab_ticker)
   spx_ab_event = exchange_client.get_event(spx_ab_ticker)
