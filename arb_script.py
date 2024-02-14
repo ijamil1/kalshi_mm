@@ -18,7 +18,7 @@ import requests
 import  uuid
 import json
 import logging
-from datetime import date, datetime as dt
+from datetime import date, datetime as dt, timedelta
 from urllib3.exceptions import HTTPError
 from dateutil import parser
 from datetime import datetime
@@ -87,45 +87,47 @@ def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol_, short_rang
       
     process_cross_event_arb_orders(exchange_client, range_ticker, long_range_vol, lb_ticker, short_lb_vol, ub_ticker, long_ub_vol, False)
 
-def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
-  for ticker in ndx_range_tickers:
-    '''cross event arb for NASDAQ100 events'''
-    if ticker not in ndx_range_ticker_to_ab_tickers:
-      continue
-    ab_tickers = ndx_range_ticker_to_ab_tickers[ticker]
-    lb_ticker = ab_tickers[0]
-    ub_ticker = ab_tickers[1]
-    if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker]:
-      # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
-      #need to figure out min volume across the 2 shorts and 1 long
-      min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
-      vol = adjust_order_volume(100 - bb_dict[ticker], ba_dict[lb_ticker], 100-bb_dict[ub_ticker], min_vol, bankroll, min_bankroll)
-      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol)
-    elif ba_dict[ticker] < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
-      #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
-      #need to figure out min volume across the 1 short and 2 longs
-      min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
-      vol = adjust_order_volume(ba_dict[ticker], 100 - bb_dict[lb_ticker], ba_dict[ub_ticker], min_vol, bankroll, min_bankroll)
-      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol, False)
-  for ticker in spx_range_tickers:
-    '''cross event arb for SP500 events'''
-    if ticker not in spx_range_ticker_to_ab_tickers:
-      continue
-    ab_tickers = spx_range_ticker_to_ab_tickers[ticker]
-    lb_ticker = ab_tickers[0]
-    ub_ticker = ab_tickers[1]
-    if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker]:
-      # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
-      #need to figure out min volume across the 2 shorts and 1 long
-      min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
-      vol = adjust_order_volume(100 - bb_dict[ticker], ba_dict[lb_ticker], 100-bb_dict[ub_ticker], min_vol, bankroll, min_bankroll)
-      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol)
-    elif ba_dict[ticker] < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
-      #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
-      #need to figure out min volume across the 1 short and 2 longs
-      min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
-      vol = adjust_order_volume(ba_dict[ticker], 100 - bb_dict[lb_ticker], ba_dict[ub_ticker], min_vol, bankroll, min_bankroll)
-      execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol, False)
+async def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
+  while datetime.now(tz=eastern).hour >= 9 and datetime.now(tz=eastern)<= 16 and breakout==False:
+    for ticker in ndx_range_tickers:
+      '''cross event arb for NASDAQ100 events'''
+      if ticker not in ndx_range_ticker_to_ab_tickers:
+        continue
+      ab_tickers = ndx_range_ticker_to_ab_tickers[ticker]
+      lb_ticker = ab_tickers[0]
+      ub_ticker = ab_tickers[1]
+      if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker]:
+        # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
+        #need to figure out min volume across the 2 shorts and 1 long
+        min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
+        vol = adjust_order_volume(100 - bb_dict[ticker], ba_dict[lb_ticker], 100-bb_dict[ub_ticker], min_vol, bankroll, min_bankroll)
+        execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol)
+      elif ba_dict[ticker] < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
+        #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
+        #need to figure out min volume across the 1 short and 2 longs
+        min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
+        vol = adjust_order_volume(ba_dict[ticker], 100 - bb_dict[lb_ticker], ba_dict[ub_ticker], min_vol, bankroll, min_bankroll)
+        execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol, False)
+    for ticker in spx_range_tickers:
+      '''cross event arb for SP500 events'''
+      if ticker not in spx_range_ticker_to_ab_tickers:
+        continue
+      ab_tickers = spx_range_ticker_to_ab_tickers[ticker]
+      lb_ticker = ab_tickers[0]
+      ub_ticker = ab_tickers[1]
+      if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker]:
+        # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
+        #need to figure out min volume across the 2 shorts and 1 long
+        min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
+        vol = adjust_order_volume(100 - bb_dict[ticker], ba_dict[lb_ticker], 100-bb_dict[ub_ticker], min_vol, bankroll, min_bankroll)
+        execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol)
+      elif ba_dict[ticker] < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
+        #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
+        #need to figure out min volume across the 1 short and 2 longs
+        min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
+        vol = adjust_order_volume(ba_dict[ticker], 100 - bb_dict[lb_ticker], ba_dict[ub_ticker], min_vol, bankroll, min_bankroll)
+        execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol, False)
+    await asyncio.sleep(3)
 
 def handle_orderbook_snapshot(ticker, response):
   cur_market_ticker = ticker
@@ -216,7 +218,6 @@ def reset():
 
 async def get_data(market_tickers):
   command_id = 1
-  breakout = False
   async for ws in websockets.connect(uri='wss://trading-api.kalshi.com/trade-api/ws/v2', extra_headers={'Authorization': 'Bearer {}'.format(token)}):
     if breakout:
       break
@@ -225,7 +226,11 @@ async def get_data(market_tickers):
     try:
       d = {"id": command_id,"cmd": "subscribe","params": {"channels": ["orderbook_delta", "market_lifecycle"], "market_tickers": market_tickers}}
       await ws.send(json.dumps(d))  #subscribe to channels after establishing new ws connection
+      next_sleep_time = get_next_sleep_time(30, 90)
       while True:
+        if datetime.utcnow() >= next_sleep_time:
+          await asyncio.sleep(1)
+          next_sleep_time = get_next_sleep_time(30, 90)
         if bankroll <= min_bankroll:
           #break if we've lost or wagered half our starting bankroll for the day
           breakout = True
@@ -271,21 +276,23 @@ async def get_data(market_tickers):
       breakout = True
       command_id+=1
 
-
+async def main():
+  if len(markets) > 0:
+    await asyncio.gather(get_data(markets), check_cross_event_arbs(ndx_ab_markets, spx_range_markets))
+  else:
+    logging.debug('no events\' markets form a partition')
 
 today = datetime.today().date()
 spx_range_ticker, ndx_range_ticker = get_range_event_tickers(today)
 spx_ab_ticker, ndx_ab_ticker = get_above_below_event_tickers(today)
 
 eastern = timezone('US/Eastern')
+breakout = False
 
 bids = {} #ticker: {price in usd: qty}
 asks = {} #ticker: {price in usd: qty}
 bb_dict = {} #ticker: best bid price in usd
 ba_dict = {} #ticker: best ask price in usd
-
-
-
 
 kalshi_creds = get_kalshi_creds()
 exchange_client = ExchangeClient(exchange_api_base="https://trading-api.kalshi.com/trade-api/v2", email = kalshi_creds[0], password = kalshi_creds[1])
@@ -317,16 +324,10 @@ try:
 
   markets = ndx_range_markets + ndx_ab_markets + spx_range_markets + spx_ab_markets
 
-
 except Exception as e:
   logging.error("an exception was thrown in the try block of the script that finds the markets for the events", exc_info=True)
-else:
-  if len(markets) > 0:
-    asyncio.run(get_data(markets))
-  else:
-    logging.debug('no events\' markets form a partition')
 
-
+asyncio.run(main())
 
 
 

@@ -4,6 +4,7 @@ import json
 import bisect
 import uuid
 import math
+from datetime import datetime, date, timedelta
 
 month_to_abbr = {
     1: 'JAN',
@@ -413,6 +414,10 @@ def check_range_arbs(ndx_tickers, spx_tickers):
     #spx buy arb possible
     min_vol = get_event_ask_vol(spx_tickers, ba_dict, asks)
     pass
+
+def get_next_sleep_time(min_delta, max_delta):
+   td = timedelta(seconds=np.random.randint(min_delta, max_delta+1))
+   return datetime.utcnow() + td
 
 def check_sell_arb(ticker_list):
     sp = False
