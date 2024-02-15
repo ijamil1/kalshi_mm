@@ -45,22 +45,22 @@ def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol_, short_rang
   long_range_vol = 0
   
   if short_range:
-    order_resp = submit_limit_buy(exchange_client, range_ticker, 'no', vol, bb_dict[range_ticker] * 100) #place short order on range ticker
+    order_resp = submit_limit_buy(exchange_client, range_ticker, 'no', vol, bb_dict[range_ticker]) #place short order on range ticker
     short_range_vol = get_taker_fill(exchange_client, order_resp)
-    bankroll -= short_range_vol * (100 - (bb_dict[range_ticker] * 100))
-    logging.info('Limit Buy: ticker: %s, side: %s, buy_price: %s, count: %s', range_ticker, 'no', str(100 - (bb_dict[range_ticker] * 100)), str(short_range_vol))
+    bankroll -= short_range_vol * (100 - (bb_dict[range_ticker]))
+    logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', range_ticker, 'no', str(100 - (bb_dict[range_ticker])), str(short_range_vol))
 
     if short_range_vol:
-      order_resp = submit_limit_buy(exchange_client, lb_ticker, 'yes', short_range_vol, ba_dict[lb_ticker] * 100) #place long order on lb ticker
+      order_resp = submit_limit_buy(exchange_client, lb_ticker, 'yes', short_range_vol, ba_dict[lb_ticker]) #place long order on lb ticker
       long_lb_vol = get_taker_fill(exchange_client, order_resp)
-      bankroll -= long_lb_vol * (ba_dict[lb_ticker] * 100)
-      logging.info('Limit Buy: ticker: %s, side: %s, buy_price: %s, count: %s', lb_ticker, 'yes', str(ba_dict[lb_ticker] * 100), str(long_lb_vol))
+      bankroll -= long_lb_vol * (ba_dict[lb_ticker])
+      logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', lb_ticker, 'yes', str(ba_dict[lb_ticker]), str(long_lb_vol))
 
     if long_lb_vol:
-      order_resp = submit_limit_buy(exchange_client, ub_ticker, 'no', long_lb_vol, bb_dict[ub_ticker] * 100)  #place short order on ub ticker
+      order_resp = submit_limit_buy(exchange_client, ub_ticker, 'no', long_lb_vol, bb_dict[ub_ticker])  #place short order on ub ticker
       short_ub_vol = get_taker_fill(exchange_client, order_resp)
-      bankroll -= short_ub_vol * (100 - (bb_dict[ub_ticker] * 100))
-      logging.info('Limit Buy: ticker: %s, side: %s, buy_price: %s, count: %s', ub_ticker, 'no', str(100 - (bb_dict[ub_ticker] * 100)), str(short_ub_vol))
+      bankroll -= short_ub_vol * (100 - (bb_dict[ub_ticker]))
+      logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', ub_ticker, 'no', str(100 - (bb_dict[ub_ticker])), str(short_ub_vol))
 
     
     process_cross_event_arb_orders(exchange_client, range_ticker, short_range_vol, lb_ticker, long_lb_vol, ub_ticker, short_ub_vol)
@@ -68,28 +68,29 @@ def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol_, short_rang
 
   else:
     
-    order_resp = submit_limit_buy(exchange_client, lb_ticker, 'no', vol, bb_dict[lb_ticker] * 100) #place short order on lb ticker
+    order_resp = submit_limit_buy(exchange_client, lb_ticker, 'no', vol, bb_dict[lb_ticker]) #place short order on lb ticker
     short_lb_vol = get_taker_fill(exchange_client, order_resp)
-    bankroll -= short_lb_vol * (100 - (bb_dict[lb_ticker] * 100))
-    logging.info('Limit Buy: ticker: %s, side: %s, buy_price: %s, count: %s', lb_ticker, 'no', str(100 - (bb_dict[lb_ticker] * 100)), str(short_lb_vol))
+    bankroll -= short_lb_vol * (100 - (bb_dict[lb_ticker]))
+    logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', lb_ticker, 'no', str(100 - (bb_dict[lb_ticker])), str(short_lb_vol))
 
     if short_lb_vol:
-      order_resp = submit_limit_buy(exchange_client, ub_ticker, 'yes', short_lb_vol, ba_dict[ub_ticker] * 100) #place long order on ub ticker
+      order_resp = submit_limit_buy(exchange_client, ub_ticker, 'yes', short_lb_vol, ba_dict[ub_ticker]) #place long order on ub ticker
       long_ub_vol = get_taker_fill(exchange_client, order_resp)
-      bankroll -= long_ub_vol * ba_dict[ub_ticker] * 100
-      logging.info('Limit Buy: ticker: %s, side: %s, buy_price: %s, count: %s', ub_ticker, 'yes', str(ba_dict[ub_ticker] * 100), str(long_ub_vol))
+      bankroll -= long_ub_vol * ba_dict[ub_ticker]
+      logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', ub_ticker, 'yes', str(ba_dict[ub_ticker] * 100), str(long_ub_vol))
 
     if long_ub_vol:
-      order_resp = submit_limit_buy(exchange_client, range_ticker, 'yes', long_ub_vol, ba_dict[range_ticker] * 100) #place long order on range ticker
+      order_resp = submit_limit_buy(exchange_client, range_ticker, 'yes', long_ub_vol, ba_dict[range_ticker]) #place long order on range ticker
       long_range_vol = get_taker_fill(exchange_client, order_resp)
-      bankroll -= long_range_vol * ba_dict[range_ticker] * 100
-      logging.info('Limit Buy: ticker: %s, side: %s, buy_price: %s, count: %s', range_ticker, 'yes', str(ba_dict[range_ticker] * 100), str(long_range_vol))
+      bankroll -= long_range_vol * ba_dict[range_ticker]
+      logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', range_ticker, 'yes', str(ba_dict[range_ticker]), str(long_range_vol))
       
     process_cross_event_arb_orders(exchange_client, range_ticker, long_range_vol, lb_ticker, short_lb_vol, ub_ticker, long_ub_vol, False)
 
 async def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
-  while datetime.now(tz=eastern).hour >= 9 and datetime.now(tz=eastern)<= 16 and breakout==False:
-    
+  global breakout
+  while datetime.now(tz=eastern).hour >= 9 and datetime.now(tz=eastern).hour <= 16 and breakout==False:
+    await asyncio.sleep(5)
     for ticker in ndx_range_tickers:
       '''cross event arb for NASDAQ100 events'''
       if ticker not in ndx_range_ticker_to_ab_tickers:
@@ -97,13 +98,13 @@ async def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
       ab_tickers = ndx_range_ticker_to_ab_tickers[ticker]
       lb_ticker = ab_tickers[0]
       ub_ticker = ab_tickers[1]
-      if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker] + .03:
+      if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker] + 3:
         # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
         #need to figure out min volume across the 2 shorts and 1 long
         min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
-        vol = adjust_order_volume(100 - bb_dict[ticker], ba_dict[lb_ticker], 100-bb_dict[ub_ticker], min_vol, bankroll, min_bankroll)
+        vol = adjust_order_volume(100 - bb_dict[ticker], ba_dict[lb_ticker], 100 - bb_dict[ub_ticker], min_vol, bankroll, min_bankroll)
         execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol)
-      elif ba_dict[ticker] + .03 < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
+      elif ba_dict[ticker] + 3 < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
         #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
         #need to figure out min volume across the 1 short and 2 longs
         min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
@@ -117,52 +118,55 @@ async def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
       ab_tickers = spx_range_ticker_to_ab_tickers[ticker]
       lb_ticker = ab_tickers[0]
       ub_ticker = ab_tickers[1]
-      if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker] + .03:
+      if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker] + 3:
         # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
         #need to figure out min volume across the 2 shorts and 1 long
         min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
-        vol = adjust_order_volume(100 - bb_dict[ticker], ba_dict[lb_ticker], 100-bb_dict[ub_ticker], min_vol, bankroll, min_bankroll)
+        vol = adjust_order_volume(100 - bb_dict[ticker], ba_dict[lb_ticker], 100 - bb_dict[ub_ticker], min_vol, bankroll, min_bankroll)
         execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol)
-      elif ba_dict[ticker] + 0.03 < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
+      elif ba_dict[ticker] + 3 < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
         #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
         #need to figure out min volume across the 1 short and 2 longs
         min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
         vol = adjust_order_volume(ba_dict[ticker], 100 - bb_dict[lb_ticker], ba_dict[ub_ticker], min_vol, bankroll, min_bankroll)
         execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol, False)
-    await asyncio.sleep(3)
 
 def handle_orderbook_snapshot(ticker, response):
-  cur_market_ticker = ticker
-  resp = response
-  reset()
+    cur_market_ticker = ticker
+    resp = response
+    global bids, asks, bb_dict, ba_dict
+    bids[cur_market_ticker] = {0: 0}
+    asks[cur_market_ticker] = {100: 0}
+    bb_dict[cur_market_ticker] = 0
+    ba_dict[cur_market_ticker] = 100
+    yes_bids = None
+    no_bids = None
+    if 'yes' in resp['msg']:
+        yes_bids = resp['msg']['yes']
+    if 'no' in resp['msg']:
+        no_bids = resp['msg']['no']
 
-  yes_bids = None
-  no_bids = None
-  if 'yes' in resp['msg']:
-    yes_bids = resp['msg']['yes']
-  if 'no' in resp['msg']:
-    no_bids = resp['msg']['no']
+    if yes_bids is not None:
+        for bid_qty in yes_bids:
+            bid = bid_qty[0]
+            bids[cur_market_ticker][bid] = bid_qty[1]
 
-  if yes_bids is not None:
-    for bid_qty in yes_bids:
-      bid = round(bid_qty[0]/100, 2)
-      bids[cur_market_ticker][bid] = bid_qty[1]
-    
     bb = max(bids[cur_market_ticker].keys())
     bb_dict[cur_market_ticker] = bb
-  
-  if no_bids is not None:
-    for bid_qty in no_bids:
-      ask = round((100-bid_qty[0])/100,2)
-      asks[cur_market_ticker][ask] = bid_qty[1]
+
+    if no_bids is not None:
+        for bid_qty in no_bids:
+            ask = 100-bid_qty[0]
+            asks[cur_market_ticker][ask] = bid_qty[1]
 
     ba = min(asks[cur_market_ticker].keys())
     ba_dict[cur_market_ticker] = ba
 
 def handle_yes_orderbook_delta(ticker, response):
+    global bids, asks, bb_dict, ba_dict
     cur_market_ticker = ticker
     resp = response
-    price = round(resp['msg']['price']/100, 2)
+    price = resp['msg']['price']
     delta = resp['msg']['delta']
     if delta == 0:
       return
@@ -182,14 +186,15 @@ def handle_yes_orderbook_delta(ticker, response):
           bb_dict[cur_market_ticker] = max(bids[cur_market_ticker].keys()) if len(bids[cur_market_ticker]) else 0
 
 def handle_no_orderbook_delta(ticker, response):
+    global bids, asks, bb_dict, ba_dict
     #side is no
     cur_market_ticker = ticker
     resp = response
-    price = (100 - resp['msg']['price'])/100
+    price = 100 - resp['msg']['price']
     delta = resp['msg']['delta']
     if delta == 0:
       return
-    
+
     if price not in asks[cur_market_ticker]:
       #ask is not in existing order book
       assert delta > 0
@@ -208,18 +213,20 @@ def reset():
   '''
   clears bids and asks dicts and resets bb and ba for each ticker to 0, 1 respectively with 0 volume for each
   '''
+  global bids, asks, bb_dict, ba_dict
   bids.clear()
   asks.clear()
   bb_dict.clear()
   ba_dict.clear()
   for ticker in markets:    
     bids[ticker] = {0: 0}
-    asks[ticker] = {1: 0}
+    asks[ticker] = {100: 0}
     bb_dict[ticker] = 0
-    ba_dict[ticker] = 1
+    ba_dict[ticker] = 100
 
 async def get_data(market_tickers):
   command_id = 1
+  global breakout, bb_dict, ba_dict, bids, asks
   async for ws in websockets.connect(uri='wss://trading-api.kalshi.com/trade-api/ws/v2', extra_headers={'Authorization': 'Bearer {}'.format(token)}):
     if breakout:
       break
@@ -231,7 +238,7 @@ async def get_data(market_tickers):
       next_sleep_time = get_next_sleep_time(30, 90)
       while True:
         if datetime.utcnow() >= next_sleep_time:
-          await asyncio.sleep(1)
+          await asyncio.sleep(0.25)
           next_sleep_time = get_next_sleep_time(30, 90)
         if bankroll <= min_bankroll:
           #break if we've lost or wagered half our starting bankroll for the day
@@ -280,9 +287,9 @@ async def get_data(market_tickers):
 
 async def main():
   if len(markets) > 0:
-    await asyncio.gather(get_data(markets), check_cross_event_arbs(ndx_ab_markets, spx_range_markets))
+    await asyncio.gather(get_data(markets), check_cross_event_arbs(ndx_range_markets, spx_range_markets))
   else:
-    logging.debug('no events\' markets form a partition')
+    logging.debug('no markets')
 
 today = datetime.today().date()
 spx_range_ticker, ndx_range_ticker = get_range_event_tickers(today)
@@ -291,14 +298,14 @@ spx_ab_ticker, ndx_ab_ticker = get_above_below_event_tickers(today)
 eastern = timezone('US/Eastern')
 breakout = False
 
-bids = {} #ticker: {price in usd: qty}
-asks = {} #ticker: {price in usd: qty}
-bb_dict = {} #ticker: best bid price in usd
-ba_dict = {} #ticker: best ask price in usd
+bids = {} #ticker: {price in cents: qty}
+asks = {} #ticker: {price in cents: qty}
+bb_dict = {} #ticker: best bid price in cents
+ba_dict = {} #ticker: best ask price in cents
 
 kalshi_creds = get_kalshi_creds()
 exchange_client = ExchangeClient(exchange_api_base="https://trading-api.kalshi.com/trade-api/v2", email = kalshi_creds[0], password = kalshi_creds[1])
-min_bankroll = round(exchange_client.get_balance()['balance'] * 0.5) #in cents; starting bankroll is half of the balance in Kalshi account
+min_bankroll = round(exchange_client.get_balance()['balance'] * 0.2) #in cents; starting bankroll is 1/5th of the balance in Kalshi account
 bankroll = exchange_client.get_balance()['balance']
 token = exchange_client.token
 logging.basicConfig(filename='cross_event_arb_log.txt', encoding='utf-8', level=logging.DEBUG, format="%(levelname)s | %(asctime)s | %(message)s", datefmt="%Y-%m-%dT%H:%M:%SZ",)
@@ -319,8 +326,8 @@ try:
   ndx_range_subtitles = [(x['ticker'], x['subtitle']) for x in ndx_range_event['markets']]
   spx_range_subtitles = [(x['ticker'], x['subtitle']) for x in spx_range_event['markets']]
 
-  ndx_range_ticker_to_ab_tickers, ndx_ab_ticker_to_range_tickers = map_range_ticker_to_ab_tickers(ndx_range_subtitles, ndx_val_ab_ticker_map)
-  spx_range_ticker_to_ab_tickers, spx_ab_ticker_to_range_tickers = map_range_ticker_to_ab_tickers(spx_range_subtitles, spx_val_ab_ticker_map)
+  ndx_range_ticker_to_ab_tickers = map_range_ticker_to_ab_tickers(ndx_range_subtitles, ndx_val_ab_ticker_map)
+  spx_range_ticker_to_ab_tickers = map_range_ticker_to_ab_tickers(spx_range_subtitles, spx_val_ab_ticker_map)
   #{}_range_ticker_to_ab_tickers maps a range ticker to the 2 above/below tickers that can be used to replicate the payoff of the range ticker
   #{}_ab_ticker_to_range_tickers maps an above/below ticker to range tickers it can be used to replicate the payoff of
 
