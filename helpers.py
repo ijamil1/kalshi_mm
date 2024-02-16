@@ -49,22 +49,20 @@ def calc_orderboook_imb(bids, asks, level=1):
     '''
     bids_depth = len(bids)
     asks_depth = len(asks)
-    if level > min([bids_depth, asks_depth]) or level == 0:
-        if level <= 1:
-            if bids_depth:
-                return 1
-            elif asks_depth:
-                return -1
-            else:
-                return 0
-        return calc_orderboook_imb(bids, asks, min([bids_depth, asks_depth]))
+    if bids_depth == 0 and asks_depth > 0:
+      return -1
+    elif bids_depth > 0 and asks_depth == 0:
+      return 1
+    elif bids_depth == 0 and  asks_depth == 0:
+      return 0
+    if level == 1:
+      bids_vol = bids[len(bids)-1][1]
+      asks_vol = asks[0][1]
     else:
-        bids_vol = 0
-        asks_vol = 0
-        for idx in range(level):
-            bids_vol += bids[len(bids)-1-idx][1]
-            asks_vol += asks[idx][1]
-        return (bids_vol - asks_vol)/(bids_vol + asks_vol)
+      bids_vol = sum([x[1] for x in bids])
+      asks_vol = sum([x[1] for x in asks])
+    return (bids_vol - asks_vol)/(bids_vol + asks_vol)
+
 
 def get_best_bid(bids):
     '''
@@ -83,7 +81,17 @@ def get_best_ask(asks):
         return asks[0][0]
     else:
         return np.inf
+  
 
+def get_bbv_proportion(bids):
+  '''
+  bids: ascending [price, qty] list
+  return best bid volume / total bid volume
+  '''
+  if len(bids):
+      return bids[len(bids)-1][1]/sum([x[1] for x in bids])
+  else:
+      return None
 
 def get_bbv(bids):
     '''
@@ -94,6 +102,16 @@ def get_bbv(bids):
         return bids[len(bids)-1][1]
     else:
         return 0
+
+def get_bav_proportion(asks):
+  '''
+  asks: ascending [price, qty] list
+  return best ask volume / total ask volume
+  '''
+  if len(asks):
+      return asks[len(asks)-1][1]/sum([x[1] for x in asks])
+  else:
+      return None
 
 def get_bav(asks):
     '''
