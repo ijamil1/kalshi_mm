@@ -348,7 +348,7 @@ def adjust_order_volume(x_price, y_price, z_price, vol, cur_bankroll, min_bankro
    upfront_sum = vol * (x_price + y_price * z_price) #cost of entering position in cents
    fees =  3 * vol #in cents
    if cur_bankroll - upfront_sum - fees >= min_bankroll:
-      return vol
+      return vol * 0.7
    else:
       #cur_br - up_sum - 3*vol ? min_br
       #cur_br - vol * (x_price + y_price + z_price) - 3 vol >= min_br
@@ -356,7 +356,7 @@ def adjust_order_volume(x_price, y_price, z_price, vol, cur_bankroll, min_bankro
       # 3vol + (x_price + y_price + z_price)vol <= cur_br - min_br
       #vol <= (cur_br - min_br) / (x_price + y_price + z_price + 3)
       vol = math.floor((cur_bankroll - min_bankroll)/(x_price + y_price + z_price + 3))
-      return int(vol)
+      return int(vol * 0.9)
    
 def process_cross_event_arb_orders(api_client, x, x_vol, y, y_vol, z, z_vol, short_range_ind = True):
     '''

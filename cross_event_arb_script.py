@@ -13,6 +13,7 @@ import asyncio
 import websockets
 import numpy as np
 from helpers import *
+import time
 
   
 def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol_, short_range = True):
@@ -20,58 +21,56 @@ def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol_, short_rang
   short_range = True => short range ticker, long lb ticker, short ub ticker 
   short_range = False => long range ticker, short lb ticker, long ub ticker
   '''
-  vol = round(vol_*0.9)
+  vol = vol_
   if vol <= 0:
     return
-  short_range_vol = 0
-  long_lb_vol = 0
-  short_ub_vol = 0
-  short_lb_vol = 0
-  long_ub_vol = 0
-  long_range_vol = 0
   
   if short_range:
-    order_resp = submit_limit_buy(exchange_client, range_ticker, 'no', vol, bb_dict[range_ticker]) #place short order on range ticker
-    short_range_vol = get_taker_fill(exchange_client, order_resp)
-    bankroll -= short_range_vol * (100 - (bb_dict[range_ticker]))
-    logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', range_ticker, 'no', str(100 - (bb_dict[range_ticker])), str(short_range_vol))
-
-    if short_range_vol:
-      order_resp = submit_limit_buy(exchange_client, lb_ticker, 'yes', short_range_vol, ba_dict[lb_ticker]) #place long order on lb ticker
-      long_lb_vol = get_taker_fill(exchange_client, order_resp)
-      bankroll -= long_lb_vol * (ba_dict[lb_ticker])
-      logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', lb_ticker, 'yes', str(ba_dict[lb_ticker]), str(long_lb_vol))
-
-    if long_lb_vol:
-      order_resp = submit_limit_buy(exchange_client, ub_ticker, 'no', long_lb_vol, bb_dict[ub_ticker])  #place short order on ub ticker
-      short_ub_vol = get_taker_fill(exchange_client, order_resp)
-      bankroll -= short_ub_vol * (100 - (bb_dict[ub_ticker]))
-      logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', ub_ticker, 'no', str(100 - (bb_dict[ub_ticker])), str(short_ub_vol))
-
+    range_order_resp = submit_limit_buy(exchange_client, range_ticker, 'no', vol, bb_dict[range_ticker]) #place short order on range ticker
+    if range_order_resp['order']['status'] != 'executed':
+      return
     
-    process_cross_event_arb_orders(exchange_client, range_ticker, short_range_vol, lb_ticker, long_lb_vol, ub_ticker, short_ub_vol)
+    lb_order_resp = submit_limit_buy(exchange_client, lb_ticker, 'yes', vol, ba_dict[lb_ticker]) #place long order on lb ticker
+    ub_order_resp = submit_limit_buy(exchange_client, ub_ticker, 'no', vol, bb_dict[ub_ticker])  #place short order on ub ticker
+    time.sleep(.1)
 
+    range_vol = get_taker_fill(exchange_client, range_order_resp)
+    bankroll -= range_vol * (100 - (bb_dict[range_ticker]))
+    logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', range_ticker, 'no', str(100 - (bb_dict[range_ticker])), str(range_vol))
+
+    lb_vol = get_taker_fill(exchange_client, lb_order_resp)
+    bankroll -= lb_vol * (ba_dict[lb_ticker])
+    logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', lb_ticker, 'yes', str(ba_dict[lb_ticker]), str(lb_vol))
+
+    ub_vol = get_taker_fill(exchange_client, ub_order_resp)
+    bankroll -= ub_vol * (100 - (bb_dict[ub_ticker]))
+    logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', ub_ticker, 'no', str(100 - (bb_dict[ub_ticker])), str(ub_vol))
+
+    process_cross_event_arb_orders(exchange_client, range_ticker, range_vol, lb_ticker, lb_vol, ub_ticker, ub_vol)
 
   else:
     
-    order_resp = submit_limit_buy(exchange_client, lb_ticker, 'no', vol, bb_dict[lb_ticker]) #place short order on lb ticker
-    short_lb_vol = get_taker_fill(exchange_client, order_resp)
-    bankroll -= short_lb_vol * (100 - (bb_dict[lb_ticker]))
-    logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', lb_ticker, 'no', str(100 - (bb_dict[lb_ticker])), str(short_lb_vol))
+    lb_order_resp = submit_limit_buy(exchange_client, lb_ticker, 'no', vol, bb_dict[lb_ticker]) #place short order on lb ticker
+    if lb_order_resp['order']['status'] != 'executed':
+      return
+    
+    ub_order_resp = submit_limit_buy(exchange_client, ub_ticker, 'yes', vol, ba_dict[ub_ticker]) #place long order on ub ticker      
+    range_order_resp = submit_limit_buy(exchange_client, range_ticker, 'yes', vol, ba_dict[range_ticker]) #place long order on range ticker
+    time.sleep(0.1)
+    
+    lb_vol = get_taker_fill(exchange_client, lb_order_resp)
+    bankroll -= lb_vol * (100 - (bb_dict[lb_ticker]))
+    logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', lb_ticker, 'no', str(100 - (bb_dict[lb_ticker])), str(lb_vol))
 
-    if short_lb_vol:
-      order_resp = submit_limit_buy(exchange_client, ub_ticker, 'yes', short_lb_vol, ba_dict[ub_ticker]) #place long order on ub ticker
-      long_ub_vol = get_taker_fill(exchange_client, order_resp)
-      bankroll -= long_ub_vol * ba_dict[ub_ticker]
-      logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', ub_ticker, 'yes', str(ba_dict[ub_ticker] * 100), str(long_ub_vol))
+    ub_vol = get_taker_fill(exchange_client, ub_order_resp)
+    bankroll -= ub_vol * ba_dict[ub_ticker]
+    logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', ub_ticker, 'yes', str(ba_dict[ub_ticker]), str(ub_vol))
 
-    if long_ub_vol:
-      order_resp = submit_limit_buy(exchange_client, range_ticker, 'yes', long_ub_vol, ba_dict[range_ticker]) #place long order on range ticker
-      long_range_vol = get_taker_fill(exchange_client, order_resp)
-      bankroll -= long_range_vol * ba_dict[range_ticker]
-      logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', range_ticker, 'yes', str(ba_dict[range_ticker]), str(long_range_vol))
+    range_vol = get_taker_fill(exchange_client, range_order_resp)
+    bankroll -= range_vol * ba_dict[range_ticker]
+    logging.info('Limit Buy: ticker: %s, side: %s, buy_price in cents: %s, count: %s', range_ticker, 'yes', str(ba_dict[range_ticker]), str(range_vol))
       
-    process_cross_event_arb_orders(exchange_client, range_ticker, long_range_vol, lb_ticker, short_lb_vol, ub_ticker, long_ub_vol, False)
+    process_cross_event_arb_orders(exchange_client, range_ticker, range_vol, lb_ticker, lb_vol, ub_ticker, ub_vol, False)
 
 async def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
   global breakout
@@ -295,7 +294,7 @@ ba_dict = {} #ticker: best ask price in cents
 
 kalshi_creds = get_kalshi_creds()
 exchange_client = ExchangeClient(exchange_api_base="https://trading-api.kalshi.com/trade-api/v2", email = kalshi_creds[0], password = kalshi_creds[1])
-min_bankroll = round(exchange_client.get_balance()['balance'] * 0.2) #in cents; starting bankroll is 1/5th of the balance in Kalshi account
+min_bankroll = round(exchange_client.get_balance()['balance'] * 0.5) #in cents; min bankroll is half of the balance in Kalshi account
 bankroll = exchange_client.get_balance()['balance']
 token = exchange_client.token
 logging.basicConfig(filename='cross_event_arb_log.txt', encoding='utf-8', level=logging.DEBUG, format="%(levelname)s | %(asctime)s | %(message)s", datefmt="%Y-%m-%dT%H:%M:%SZ",)
