@@ -1,17 +1,3 @@
-'''IDEA: eliminate any arb opportunities
-
-  If we are dealing with an event that has n mutually exclusive markets that cover the entire outcome space, a buy side arb is possible. It would appear if the sum of the prices of the lowest asks across
-  the n markets is less than 100 cents. Let's say that this sum is some value x. Then, for each set of n contracts that you buy where each contract is for a distinct one of the n markets, the profit is 100 - x.
-  If there are m such sets. Then, the profit is m * (100 - x). And, the limiting factor is m which will be the minimum of the size of the lowest asks across the n markets.
-
-   If wew are dealing with an event that has n mutually exclusive markets that cover the entire outcome space, a sell side arb is possible. It would appear if the sum of best bids across markets is > 1, then sell at the market across all markets the same number of contracts per markets to net (# of contracts * (sum of best bids -  1)) profit by buying
-   no contracts at the market across all markets. Again, the limiting factor is the set of contracts for which you can do this for which is the minimum size of the highest bids across the n markets.
-
-  fees = ceil(.035 * num_contracts * price_in_usd * (1-price_in_usd))
-  max of x*(1-x) for x in [0,1] = 0.25  so ceil (.035 * num_contracts * .25) = .00875 * num_contracts
-  ie: max fees of .01$/contract
-   consider fees and optimize speed and pattern of logging calls and other logic
-'''
 from pytz import timezone
 from KalshiClientsBaseV2 import KalshiClient, HttpError, ExchangeClient
 import requests
@@ -101,12 +87,14 @@ async def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
       if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker] + 3:
         # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
         #need to figure out min volume across the 2 shorts and 1 long
+        logging.info('will try to short range ticker')
         min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
         vol = adjust_order_volume(100 - bb_dict[ticker], ba_dict[lb_ticker], 100 - bb_dict[ub_ticker], min_vol, bankroll, min_bankroll)
         execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol)
       elif ba_dict[ticker] + 3 < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
         #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
         #need to figure out min volume across the 1 short and 2 longs
+        logging.info('will try to long range ticker')
         min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
         vol = adjust_order_volume(ba_dict[ticker], 100 - bb_dict[lb_ticker], ba_dict[ub_ticker], min_vol, bankroll, min_bankroll)
         execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol, False)
@@ -121,12 +109,14 @@ async def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
       if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker] + 3:
         # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
         #need to figure out min volume across the 2 shorts and 1 long
+        logging.info('will try to short range ticker')
         min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
         vol = adjust_order_volume(100 - bb_dict[ticker], ba_dict[lb_ticker], 100 - bb_dict[ub_ticker], min_vol, bankroll, min_bankroll)
         execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol)
       elif ba_dict[ticker] + 3 < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
         #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
         #need to figure out min volume across the 1 short and 2 longs
+        logging.info('will try to long range ticker')
         min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
         vol = adjust_order_volume(ba_dict[ticker], 100 - bb_dict[lb_ticker], ba_dict[ub_ticker], min_vol, bankroll, min_bankroll)
         execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol, False)
