@@ -80,7 +80,7 @@ def get_best_ask(asks):
     if len(asks):
         return asks[0][0]
     else:
-        return np.inf
+        return 100
   
 
 def get_bbv_proportion(bids):
