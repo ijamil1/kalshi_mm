@@ -120,10 +120,10 @@ async def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
         vol = adjust_order_volume(ba_dict[ticker], 100 - bb_dict[lb_ticker], ba_dict[ub_ticker], min_vol, bankroll, min_bankroll)
         execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol, False)
 
-def handle_orderbook_snapshot(ticker, response):
-    cur_market_ticker = ticker
+def handle_orderbook_snapshot(cmd_id, response, processed_ts):
+    cur_market_ticker = response['msg']['market_ticker']
     resp = response
-    global bids, asks, bb_dict, ba_dict
+    global bids, asks, bb_dict, ba_dict, snapshot_vals
     bids[cur_market_ticker] = {0: 0}
     asks[cur_market_ticker] = {100: 0}
     bb_dict[cur_market_ticker] = 0
@@ -150,10 +150,11 @@ def handle_orderbook_snapshot(ticker, response):
 
     ba = min(asks[cur_market_ticker].keys())
     ba_dict[cur_market_ticker] = ba
+    snapshot_vals.append((cmd_id, resp['seq'], resp['msg']['market_ticker'], str(bids[cur_market_ticker]), str(asks[cur_market_ticker]), processed_ts.isoformat()+'Z'))
 
-def handle_yes_orderbook_delta(ticker, response):
-    global bids, asks, bb_dict, ba_dict
-    cur_market_ticker = ticker
+def handle_yes_orderbook_delta(cmd_id, response, processed_ts):
+    global bids, asks, bb_dict, ba_dict, delta_vals
+    cur_market_ticker = response['msg']['market_ticker']
     resp = response
     price = resp['msg']['price']
     delta = resp['msg']['delta']
@@ -173,11 +174,12 @@ def handle_yes_orderbook_delta(ticker, response):
         del bids[cur_market_ticker][price]
         if price == bb_dict[cur_market_ticker]:
           bb_dict[cur_market_ticker] = max(bids[cur_market_ticker].keys()) if len(bids[cur_market_ticker]) else 0
+    delta_vals.append((cmd_id, resp['seq'], resp['msg']['market_ticker'], price, delta, 'yes', processed_ts.isoformat()+'Z'))
 
-def handle_no_orderbook_delta(ticker, response):
-    global bids, asks, bb_dict, ba_dict
+def handle_no_orderbook_delta(cmd_id, response, processed_ts):
+    global bids, asks, bb_dict, ba_dict, delta_vals
     #side is no
-    cur_market_ticker = ticker
+    cur_market_ticker = response['msg']['market_ticker']
     resp = response
     price = 100 - resp['msg']['price']
     delta = resp['msg']['delta']
@@ -197,6 +199,16 @@ def handle_no_orderbook_delta(ticker, response):
         del asks[cur_market_ticker][price]
         if price == ba_dict[cur_market_ticker]:
           ba_dict[cur_market_ticker] = min(asks[cur_market_ticker].keys()) if len(asks[cur_market_ticker]) else 1  
+    delta_vals.append((cmd_id, resp['seq'], resp['msg']['market_ticker'], price, delta, 'no', processed_ts.isoformat()+'Z'))
+
+def write_data():
+    global snapshot_vals, delta_vals
+    if len(snapshot_vals):
+      cursor.executemany('INSERT INTO ob_snapshot VALUES (%s, %s, %s, %s, %s, %s)', snapshot_vals)
+      snapshot_vals.clear()
+    if len(delta_vals):
+       cursor.executemany('INSERT INTO ob_delta VALUES (%s, %s, %s, %s, %s, %s, %s)', delta_vals)
+       delta_vals.clear()
 
 def reset():
   '''
@@ -220,6 +232,7 @@ async def get_data(market_tickers):
     if breakout:
       break
     reset()
+    count = 0
     prev_seq_num = 0
     try:
       d = {"id": command_id,"cmd": "subscribe","params": {"channels": ["orderbook_delta", "market_lifecycle"], "market_tickers": market_tickers}}
@@ -239,23 +252,24 @@ async def get_data(market_tickers):
           break
         msg = await ws.recv()
         resp = json.loads(msg)
+        count+=1
+        if count % 50000 == 0:
+          write_data()
         if resp['type'] == 'orderbook_snapshot':
           if resp['seq'] - 1 != prev_seq_num:
             logging.error('orderbook channel message received out of order based on sequence number')
             break
           prev_seq_num = resp['seq']
-          cur_market_ticker = resp['msg']['market_ticker']
-          handle_orderbook_snapshot(cur_market_ticker, resp)
+          handle_orderbook_snapshot(command_id, resp, datetime.utcnow())
         elif resp['type'] == 'orderbook_delta':
           if resp['seq'] - 1 != prev_seq_num:
             logging.error('orderbook channel message received out of order based on sequence number')
             break
           prev_seq_num = resp['seq']
-          cur_market_ticker = resp['msg']['market_ticker']
           if resp['msg']['side'] == 'yes':
-            handle_yes_orderbook_delta(cur_market_ticker, resp)
+            handle_yes_orderbook_delta(command_id, resp, datetime.utcnow())
           else:
-            handle_no_orderbook_delta(cur_market_ticker, resp)
+            handle_no_orderbook_delta(command_id, resp, datetime.utcnow())
         elif resp['type'] == 'market_lifecycle':
           cur_market_ticker = resp['msg']['market_ticker']
           if 'NASDAQ' in cur_market_ticker and cur_market_ticker not in ndx_ab_markets and cur_market_ticker not in ndx_range_markets:
@@ -286,12 +300,14 @@ spx_ab_ticker, ndx_ab_ticker = get_above_below_event_tickers(today)
 
 eastern = timezone('US/Eastern')
 breakout = False
-
+snapshot_vals = []
+delta_vals = []
 bids = {} #ticker: {price in cents: qty}
 asks = {} #ticker: {price in cents: qty}
 bb_dict = {} #ticker: best bid price in cents
 ba_dict = {} #ticker: best ask price in cents
 
+cursor = get_cursor()
 kalshi_creds = get_kalshi_creds()
 exchange_client = ExchangeClient(exchange_api_base="https://trading-api.kalshi.com/trade-api/v2", email = kalshi_creds[0], password = kalshi_creds[1])
 min_bankroll = round(exchange_client.get_balance()['balance'] * 0.5) #in cents; min bankroll is half of the balance in Kalshi account
