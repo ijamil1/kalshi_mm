@@ -25,13 +25,15 @@ def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol_, short_rang
   if vol <= 0:
     return
   
+  now = datetime.now(tz=eastern)
+  if now.hour == 15 and now.minute == 59:
+    return
+
   if short_range:
     range_order_resp = submit_limit_buy(exchange_client, range_ticker, 'no', vol, bb_dict[range_ticker]) #place short order on range ticker
-    if range_order_resp['order']['status'] != 'executed':
-      return
-    
     lb_order_resp = submit_limit_buy(exchange_client, lb_ticker, 'yes', vol, ba_dict[lb_ticker]) #place long order on lb ticker
     ub_order_resp = submit_limit_buy(exchange_client, ub_ticker, 'no', vol, bb_dict[ub_ticker])  #place short order on ub ticker
+    logging.info('placed orders to short range ticker, long lb ticker, and short ub ticker')
     time.sleep(.1)
 
     range_vol = get_taker_fill(exchange_client, range_order_resp)
@@ -51,11 +53,9 @@ def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol_, short_rang
   else:
     
     lb_order_resp = submit_limit_buy(exchange_client, lb_ticker, 'no', vol, bb_dict[lb_ticker]) #place short order on lb ticker
-    if lb_order_resp['order']['status'] != 'executed':
-      return
-    
     ub_order_resp = submit_limit_buy(exchange_client, ub_ticker, 'yes', vol, ba_dict[ub_ticker]) #place long order on ub ticker      
     range_order_resp = submit_limit_buy(exchange_client, range_ticker, 'yes', vol, ba_dict[range_ticker]) #place long order on range ticker
+    logging.info('placed orders to long range ticker, short lb ticker, long ub ticker')
     time.sleep(0.1)
     
     lb_vol = get_taker_fill(exchange_client, lb_order_resp)
@@ -230,6 +230,7 @@ async def get_data(market_tickers):
   global breakout, bb_dict, ba_dict, bids, asks
   async for ws in websockets.connect(uri='wss://trading-api.kalshi.com/trade-api/ws/v2', extra_headers={'Authorization': 'Bearer {}'.format(token)}):
     if breakout:
+      write_data()
       break
     reset()
     count = 0
@@ -281,6 +282,7 @@ async def get_data(market_tickers):
             breakout = True      
             break   
     except websockets.ConnectionClosed:
+      write_data()
       command_id+=1
       logging.error('websocket error')
     except Exception as e:
