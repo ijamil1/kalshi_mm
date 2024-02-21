@@ -332,6 +332,7 @@ def submit_limit_buy(api_client, ticker, side, vol, yes_price):
                 'sell_position_floor': None,
                 'buy_max_cost': None}
 
+    logging.info('Trying Limit Buy -- ticker: %s, side: %s, count: %s, yes_price: %s', ticker, side, vol, yes_price)
     resp = api_client.create_order(**params)
     return resp
 
