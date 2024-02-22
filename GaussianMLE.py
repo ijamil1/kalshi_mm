@@ -61,9 +61,9 @@ def simulate_hist(cur_idx_val, mean, std):
     res_list.sort()
     return res_list
 
-def simulate(S0, mean, std, dt):
-  cur_h = dt.hour
-  cur_m = dt.minute
+def simulate(S0, mean, std, t):
+  cur_h = t.hour
+  cur_m = t.minute
   num_mins = 60*(16 - (cur_h+1)) + 60 - cur_m
   dt = num_mins/(60*6.5)
   est_eod_vals = np.exp(np.log(S0) + np.random.normal(loc = mean * dt, scale = std * np.sqrt(dt), size=1000000))
