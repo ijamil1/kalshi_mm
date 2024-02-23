@@ -1,4 +1,6 @@
 import numpy as np
+import pandas as pd
+import yfinance as yf
 import pymysql
 import json
 import bisect
@@ -40,6 +42,28 @@ def get_cursor():
     connection = pymysql.connect(host = dbinstance_endpoint, user = db_username, password = db_pw, database = db_name, autocommit=True)
     cursor = connection.cursor()
     return cursor
+
+def get_ndx_spx_data():
+    ndx = yf.Ticker('^NDX').history(period='max').reset_index()
+    spx = yf.Ticker('^SPX').history(period='max').reset_index()
+
+    ndx['Date'] = ndx.apply(lambda x: date(x['Date'].year, x['Date'].month, x['Date'].day), axis=1)
+    spx['Date'] = spx.apply(lambda x: date(x['Date'].year, x['Date'].month, x['Date'].day), axis=1)
+
+    ndx = ndx[['Date', 'Open', 'Close']]
+    spx = spx[['Date', 'Open', 'Close']]
+
+    ndx['return'] = [None] + list((np.array(ndx['Close'].iloc[1:])-np.array(ndx['Close'].iloc[:-1]))/np.array(ndx['Close'].iloc[:-1]))
+    ndx['log_return'] = [None] + list((np.array(np.log(ndx['Close'].iloc[1:]))-np.array(np.log(ndx['Close'].iloc[:-1]))))
+
+    spx['return'] = [None] + list((np.array(spx['Close'].iloc[1:])-np.array(spx['Close'].iloc[:-1]))/np.array(spx['Close'].iloc[:-1]))
+    spx['log_return'] = [None] + list((np.array(np.log(spx['Close'].iloc[1:]))-np.array(np.log(spx['Close'].iloc[:-1]))))
+
+    ndx = ndx.iloc[1:].reset_index(drop=True)
+    spx = spx.iloc[1:].reset_index(drop=True)
+
+    return ndx, spx
+
 
 def calc_orderboook_imb(bids, asks, level=1):
     '''
