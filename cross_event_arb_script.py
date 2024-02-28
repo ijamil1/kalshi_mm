@@ -14,7 +14,7 @@ import websockets
 import numpy as np
 from helpers import *
 import time
-
+import math
   
 def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol_, short_range = True):
   '''
@@ -83,20 +83,27 @@ async def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
       ab_tickers = ndx_range_ticker_to_ab_tickers[ticker]
       lb_ticker = ab_tickers[0]
       ub_ticker = ab_tickers[1]
-      if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker] + 3:
+    
+      #fees = math.ceil((.035 * price_in_dollars * (1-price_in_dollars) * num_contract) * 100)
+
+      if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker]:
         # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
         #need to figure out min volume across the 2 shorts and 1 long
-        logging.info('will try to short range ticker')
         min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
         vol = adjust_order_volume(100 - bb_dict[ticker], ba_dict[lb_ticker], 100 - bb_dict[ub_ticker], min_vol, bankroll, min_bankroll)
-        execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol)
-      elif ba_dict[ticker] + 3 < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
+        sr_fees = math.ceil(100 * (.035 * vol * (bb_dict[ticker]/100) * (1-(bb_dict[ticker]/100)))) + math.ceil(100 * (.035 * vol * (ba_dict[lb_ticker]/100) * (1-(ba_dict[lb_ticker]/100)))) + math.ceil(100 * (.035 * vol * (bb_dict[ub_ticker]/100) * (1-(bb_dict[ub_ticker]/100))))
+        if vol * (bb_dict[ticker] - (ba_dict[lb_ticker] - bb_dict[ub_ticker])) > sr_fees:
+          logging.info('will try to short range ticker')
+          execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol)
+      elif ba_dict[ticker]  < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
         #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
         #need to figure out min volume across the 1 short and 2 longs
-        logging.info('will try to long range ticker')
         min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
         vol = adjust_order_volume(ba_dict[ticker], 100 - bb_dict[lb_ticker], ba_dict[ub_ticker], min_vol, bankroll, min_bankroll)
-        execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol, False)
+        lr_fees = math.ceil(100 * (.035 * vol * (ba_dict[ticker]/100) * (1-(ba_dict[ticker]/100)))) + math.ceil(100 * (.035 * vol * (bb_dict[lb_ticker]/100) * (1-(bb_dict[lb_ticker]/100)))) + math.ceil(100 * (.035 * vol * (ba_dict[ub_ticker]/100) * (1-(ba_dict[ub_ticker]/100))))
+        if vol * (bb_dict[lb_ticker] - ba_dict[ub_ticker] - ba_dict[ticker]) > lr_fees:
+          logging.info('will try to long range ticker')
+          execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol, False)
     
     for ticker in spx_range_tickers:
       '''cross event arb for SP500 events'''
@@ -105,20 +112,24 @@ async def check_cross_event_arbs(ndx_range_tickers, spx_range_tickers):
       ab_tickers = spx_range_ticker_to_ab_tickers[ticker]
       lb_ticker = ab_tickers[0]
       ub_ticker = ab_tickers[1]
-      if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker] + 3:
+      if bb_dict[ticker] > ba_dict[lb_ticker] - bb_dict[ub_ticker]:
         # proceeds from selling to best bid for the range ticker > total cost of (buying long ticker above/below ticker and shorting short ticker above/below ticker)
         #need to figure out min volume across the 2 shorts and 1 long
-        logging.info('will try to short range ticker')
         min_vol = min([bids[ticker][bb_dict[ticker]], bids[ub_ticker][bb_dict[ub_ticker]], asks[lb_ticker][ba_dict[lb_ticker]]])
         vol = adjust_order_volume(100 - bb_dict[ticker], ba_dict[lb_ticker], 100 - bb_dict[ub_ticker], min_vol, bankroll, min_bankroll)
-        execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol)
-      elif ba_dict[ticker] + 3 < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
+        sr_fees = math.ceil(100 * (.035 * vol * (bb_dict[ticker]/100) * (1-(bb_dict[ticker]/100)))) + math.ceil(100 * (.035 * vol * (ba_dict[lb_ticker]/100) * (1-(ba_dict[lb_ticker]/100)))) + math.ceil(100 * (.035 * vol * (bb_dict[ub_ticker]/100) * (1-(bb_dict[ub_ticker]/100))))
+        if vol * (bb_dict[ticker] - (ba_dict[lb_ticker] - bb_dict[ub_ticker])) > sr_fees:
+          logging.info('will try to short range ticker')
+          execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol)
+      elif ba_dict[ticker] < bb_dict[lb_ticker] - ba_dict[ub_ticker]:
         #proceeds from shorting (selling lb ab ticker and longing ub ab ticker) > cost of longing range ticker
         #need to figure out min volume across the 1 short and 2 longs
-        logging.info('will try to long range ticker')
         min_vol = min([asks[ticker][ba_dict[ticker]], bids[lb_ticker][bb_dict[lb_ticker]], asks[ub_ticker][ba_dict[ub_ticker]]])
         vol = adjust_order_volume(ba_dict[ticker], 100 - bb_dict[lb_ticker], ba_dict[ub_ticker], min_vol, bankroll, min_bankroll)
-        execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol, False)
+        lr_fees = math.ceil(100 * (.035 * vol * (ba_dict[ticker]/100) * (1-(ba_dict[ticker]/100)))) + math.ceil(100 * (.035 * vol * (bb_dict[lb_ticker]/100) * (1-(bb_dict[lb_ticker]/100)))) + math.ceil(100 * (.035 * vol * (ba_dict[ub_ticker]/100) * (1-(ba_dict[ub_ticker]/100))))
+        if vol * (bb_dict[lb_ticker] - ba_dict[ub_ticker] - ba_dict[ticker]) > lr_fees:
+          logging.info('will try to long range ticker')
+          execute_cross_event_arb(ticker, lb_ticker, ub_ticker, vol, False)
 
 def handle_orderbook_snapshot(cmd_id, response, processed_ts):
     cur_market_ticker = response['msg']['market_ticker']
