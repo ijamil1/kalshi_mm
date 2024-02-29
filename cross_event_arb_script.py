@@ -21,6 +21,7 @@ def execute_cross_event_arb(range_ticker, lb_ticker, ub_ticker, vol_, short_rang
   short_range = True => short range ticker, long lb ticker, short ub ticker 
   short_range = False => long range ticker, short lb ticker, long ub ticker
   '''
+  global bankroll
   vol = vol_
   if vol <= 0:
     return
