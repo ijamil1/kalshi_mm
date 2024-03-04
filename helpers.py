@@ -333,7 +333,7 @@ def submit_market_order(api_client, ticker, side, vol):
                 'type':'market',
                 'action':'sell',
                 'side': side,
-                'count': vol,
+                'count': int(vol),
                 'yes_price': None,
                 'no_price': None,
                 'expiration_ts': 1,
@@ -341,7 +341,7 @@ def submit_market_order(api_client, ticker, side, vol):
                 'buy_max_cost': None}
     
     resp = api_client.create_order(**params)
-    logging.info('Market Sell: ticker: %s, side: %s, price in cents: %s, count: %s', ticker, side, str(resp['order']['yes_price']), str(vol))
+    logging.info('Market Sell: ticker: %s, side: %s, price in cents: %s, count: %s', ticker, side, str(resp['order']['yes_price']), str(int(vol)))
     return
 
 def submit_limit_buy(api_client, ticker, side, vol, yes_price):
@@ -350,14 +350,14 @@ def submit_limit_buy(api_client, ticker, side, vol, yes_price):
                 'type':'limit',
                 'action':'buy',
                 'side': side,
-                'count': vol,
+                'count': int(vol),
                 'yes_price': yes_price,
                 'no_price': None,
                 'expiration_ts': 1,
                 'sell_position_floor': None,
                 'buy_max_cost': None}
 
-    logging.info('Trying Limit Buy -- ticker: %s, side: %s, count: %s, yes_price: %s', ticker, side, vol, yes_price)
+    logging.info('Trying Limit Buy -- ticker: %s, side: %s, count: %s, yes_price: %s', ticker, side, int(vol), yes_price)
     resp = api_client.create_order(**params)
     return resp
 
