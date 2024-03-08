@@ -4,6 +4,7 @@ https://stackoverflow.com/questions/61289020/fast-implied-volatility-calculation
 '''
 
 from scipy.stats import norm
+import numpy as np
 N = norm.cdf
 
 def bs_call(S, K, T, r, vol):
