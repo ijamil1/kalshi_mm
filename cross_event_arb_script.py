@@ -324,7 +324,7 @@ ba_dict = {} #ticker: best ask price in cents
 cursor = get_cursor()
 kalshi_creds = get_kalshi_creds()
 exchange_client = ExchangeClient(exchange_api_base="https://trading-api.kalshi.com/trade-api/v2", email = kalshi_creds[0], password = kalshi_creds[1])
-min_bankroll = round(exchange_client.get_balance()['balance'] * 0.5) #in cents; min bankroll is half of the balance in Kalshi account
+min_bankroll = round(exchange_client.get_balance()['balance'] * 0.35) #in cents; min bankroll is half of the balance in Kalshi account
 bankroll = exchange_client.get_balance()['balance']
 token = exchange_client.token
 logging.basicConfig(filename='cross_event_arb_log.txt', encoding='utf-8', level=logging.DEBUG, format="%(levelname)s | %(asctime)s | %(message)s", datefmt="%Y-%m-%dT%H:%M:%SZ",)

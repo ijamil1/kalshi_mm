@@ -8,6 +8,7 @@ import bisect
 import uuid
 import math
 from datetime import datetime, date, timedelta
+import time
 
 month_to_abbr = {
     1: 'JAN',
@@ -323,8 +324,14 @@ def get_taker_fill(api_client, order_resp):
     return order_id for this order and the fill
     '''
     order_id = order_resp['order']['order_id']
-    ord = api_client.get_order(order_id)
-    return ord['order']['taker_fill_count']
+    while True:
+      try:
+        ord = api_client.get_order(order_id)
+        return ord['order']['taker_fill_count']
+      except:
+        time.sleep(0.2)
+        continue
+    
 
 
 def submit_market_order(api_client, ticker, side, vol):
@@ -374,7 +381,7 @@ def adjust_order_volume(x_price, y_price, z_price, vol, cur_bankroll, min_bankro
    upfront_sum = vol * (x_price + y_price * z_price) #cost of entering position in cents
    fees =  3 * vol #in cents
    if cur_bankroll - upfront_sum - fees >= min_bankroll:
-      return vol * 0.7
+      return int(vol * 0.9)
    else:
       #cur_br - up_sum - 3*vol ? min_br
       #cur_br - vol * (x_price + y_price + z_price) - 3 vol >= min_br
